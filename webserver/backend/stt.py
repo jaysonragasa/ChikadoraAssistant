@@ -7,9 +7,15 @@ package isn't installed, the API returns a clear, actionable error instead of
 crashing.
 
 Environment variables:
-  STT_MODEL   faster-whisper model size or repo. Default: "base"
-              (options: tiny, base, small, medium, large-v3, ...)
-  STT_DEVICE  "cpu" (default) or "cuda".
+  STT_MODEL     faster-whisper model size or repo. Default: "base"
+                (options: tiny, base, small, medium, large-v3, ...)
+  STT_DEVICE    "cpu" (default) or "cuda".
+  STT_LANGUAGE  Default language when the request doesn't specify one. Default
+                "en". Forcing a language is far more reliable than auto-detect
+                on short clips. Set "auto" to let Whisper guess.
+  STT_VAD       "1" to enable the voice-activity filter, "0" (default) to
+                disable it. The VAD often drops short/quiet commands entirely,
+                which shows up as "clear audio but no transcript".
 """
 
 import os
@@ -22,6 +28,8 @@ import numpy as np
 
 STT_MODEL = os.environ.get("STT_MODEL", "base")
 STT_DEVICE = os.environ.get("STT_DEVICE", "cpu")
+STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "en")
+STT_VAD = os.environ.get("STT_VAD", "0") in ("1", "true", "True")
 
 # Map language names / short codes to Whisper's 2-letter codes.
 # "Auto" / unknown -> None lets Whisper auto-detect.
@@ -89,12 +97,21 @@ def transcribe(wav: np.ndarray, sr: int, language: str = "") -> dict:
     audio = _to_16k_mono(wav, sr)
     model = _load()
 
+    # Resolve the language: request value -> STT_LANGUAGE default -> auto.
     lang_code = _LANG_TO_WHISPER.get((language or "").strip().lower())
+    if lang_code is None:
+        default = STT_LANGUAGE.strip().lower()
+        lang_code = None if default in ("", "auto") else default
+
     segments, info = model.transcribe(
         audio,
-        language=lang_code,   # None -> auto-detect
+        language=lang_code,             # forced language is reliable on short clips
         beam_size=5,
-        vad_filter=True,      # trims silence for cleaner transcripts
+        vad_filter=STT_VAD,             # VAD off by default: it drops short commands
+        condition_on_previous_text=False,  # each command is independent
+        # Make Whisper less eager to discard a short/quiet clip as "silence".
+        no_speech_threshold=0.85,
+        temperature=[0.0, 0.2, 0.4],    # fallbacks if the greedy decode is unsure
     )
     text = " ".join(seg.text.strip() for seg in segments).strip()
     return {"text": text, "language": getattr(info, "language", lang_code or "")}
