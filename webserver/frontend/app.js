@@ -527,6 +527,19 @@ async function refreshRecordings() {
 }
 $("refreshRecordingsBtn").addEventListener("click", refreshRecordings);
 
+$("deleteRecordingsBtn").addEventListener("click", async () => {
+  const btn = $("deleteRecordingsBtn");
+  if (!confirm("Delete all saved recordings?")) return;
+  btn.disabled = true;
+  try {
+    await fetch("/api/recordings", { method: "DELETE" });
+    await refreshRecordings();
+  } catch (_) {
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // init
 loadHealth();
 loadSettings();

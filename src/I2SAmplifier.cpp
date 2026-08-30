@@ -19,6 +19,22 @@ void I2SAmplifier::setStreamingMode(bool enabled) {
     Serial.printf("[Audio] Playback mode: %s\n", enabled ? "STREAMING" : "BUFFERED");
 }
 
+void I2SAmplifier::setVolume(float v) {
+    if (v < 0.0f) v = 0.0f;
+    if (v > 4.0f) v = 4.0f;   // allow some boost, but keep it sane
+    volume = v;
+    Serial.printf("[Audio] Volume: %.2f\n", volume);
+}
+
+// Apply volume with clamping. Skips the math entirely at unity for efficiency.
+inline int16_t I2SAmplifier::scaleSample(int16_t s) {
+    if (volume == 1.0f) return s;
+    int32_t v = (int32_t)(s * volume);
+    if (v > 32767) v = 32767;
+    else if (v < -32768) v = -32768;
+    return (int16_t)v;
+}
+
 // ---------------------------------------------------------------------------
 // Common: I2S driver install / teardown.
 // Streaming needs a big DMA cushion to ride out network jitter; buffered feeds
@@ -213,8 +229,8 @@ void I2SAmplifier::updateBuffered() {
         int16_t l = (int16_t)(wavData[playPos] | (wavData[playPos + 1] << 8));
         int16_t r = l;
         if (numChannels >= 2) r = (int16_t)(wavData[playPos + 2] | (wavData[playPos + 3] << 8));
-        stereo[frames * 2]     = l;
-        stereo[frames * 2 + 1] = r;
+        stereo[frames * 2]     = scaleSample(l);
+        stereo[frames * 2 + 1] = scaleSample(r);
         playPos += frameBytes;
         frames++;
     }
@@ -355,8 +371,8 @@ void I2SAmplifier::updateStreaming() {
         int16_t l = (int16_t)(p[0] | (p[1] << 8));
         int16_t rr = l;
         if (numChannels >= 2) rr = (int16_t)(p[2] | (p[3] << 8));
-        stereo[out++] = l;
-        stereo[out++] = rr;
+        stereo[out++] = scaleSample(l);
+        stereo[out++] = scaleSample(rr);
     }
     size_t written = 0;
     i2s_write(I2S_NUM_0, stereo, out * sizeof(int16_t), &written, portMAX_DELAY);
@@ -375,7 +391,7 @@ void I2SAmplifier::playDingDong() {
     installI2S(16000);
 
     int sample_rate = 16000;
-    float amplitude = 16000.0; // half of max 16-bit range
+    float amplitude = 16000.0 * volume; // half of max 16-bit range, scaled by volume
     size_t bytes_written;
 
     int samples1 = (sample_rate * 100) / 1000; // "Ding" 800 Hz 100 ms

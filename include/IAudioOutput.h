@@ -15,4 +15,8 @@ public:
     // RAM (smooth, needs the clip to fit in memory); true = stream from HTTP and
     // play as it arrives (any length, but can stutter on a busy/slow network).
     virtual void setStreamingMode(bool /*enabled*/) {}
+
+    // Output volume: 0.0 = silent, 1.0 = full scale (unchanged). Values above
+    // 1.0 amplify and may clip. Scales samples in software before I2S.
+    virtual void setVolume(float /*volume*/) {}
 };

@@ -23,6 +23,9 @@ private:
 
     bool i2sInstalled = false;
     bool streamMode = false;      // false = buffered, true = streaming
+    float volume = 1.0f;          // output volume: 0.0 silent .. 1.0 full scale
+
+    inline int16_t scaleSample(int16_t s);   // apply volume + clamp
 
     // Format, parsed from the WAV header (either mode).
     uint32_t sampleRate = 16000;
@@ -64,6 +67,7 @@ public:
 
     void initialize() override;
     void setStreamingMode(bool enabled) override;
+    void setVolume(float v) override;
     void playUrl(const char* url) override;
     void playDingDong() override;
     void update() override;

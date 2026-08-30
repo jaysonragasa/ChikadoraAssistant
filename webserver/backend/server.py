@@ -233,6 +233,22 @@ def get_recording(name: str):
     return FileResponse(path, media_type="audio/wav")
 
 
+@app.delete("/api/recordings")
+def clear_recordings():
+    """Delete all saved recordings. Returns how many were removed."""
+    removed = 0
+    if os.path.isdir(RECORDINGS_DIR):
+        for name in os.listdir(RECORDINGS_DIR):
+            if not _REC_RE.match(name):
+                continue  # only touch our own rec-*.wav files
+            try:
+                os.remove(os.path.join(RECORDINGS_DIR, name))
+                removed += 1
+            except OSError:
+                pass
+    return {"removed": removed}
+
+
 @app.get("/api/models")
 def list_models():
     return {"models": registry.list_models()}
