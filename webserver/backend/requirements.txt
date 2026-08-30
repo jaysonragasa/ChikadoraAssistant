@@ -1,0 +1,24 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Audio I/O (no ffmpeg required; libsndfile ships with soundfile wheels)
+soundfile==0.12.1
+numpy>=1.26,<2.3
+
+# Corporate TLS: verify against the Windows cert store (fixes SSL
+# CERTIFICATE_VERIFY_FAILED behind Zscaler/Netskope-style proxies).
+truststore>=0.10.0
+
+# Progress reporting for downloads
+tqdm>=4.66.0
+
+# Speech-to-text for /api/transcribe (CPU-friendly, offline).
+faster-whisper>=1.0.0
+
+# Kokoro TTS engine. Pulls in torch as a dependency. NOTE: install a CPU torch
+# wheel first (see README) so pip doesn't grab a CUDA build on a CPU-only
+# machine. Some non-English languages also need the espeak-ng system package;
+# US/UK English work without it.
+kokoro>=0.9.0

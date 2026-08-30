@@ -1,0 +1,23 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Model weights / caches (large)
+models/
+*.safetensors
+*.bin
+*.pth
+
+# Generated audio
+*.wav
+!frontend/**/*.wav
+
+# Env
+.env
+
+# Local app settings (contains the Gemini API key)
+backend/settings.json
+
+# Saved copies of clips received from the device (debug)
+backend/recordings/

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kokoro TTS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            ink: { 900: "#0b0d12", 800: "#12151c", 700: "#1a1e28", 600: "#232838" },
+            brand: { 400: "#8b8bff", 500: "#6d6dff", 600: "#5757e6" },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="bg-ink-900 text-slate-200 antialiased min-h-screen">
+  <!-- Top bar -->
+  <header class="border-b border-white/10 bg-ink-800/60 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-4xl mx-auto px-5 py-3 flex items-center gap-3">
+      <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white font-bold">K</div>
+      <div>
+        <h1 class="text-base font-semibold leading-tight">Kokoro TTS</h1>
+        <p class="text-xs text-slate-400 leading-tight">Runs entirely on your machine</p>
+      </div>
+      <span id="deviceBadge" class="ml-auto text-xs px-2.5 py-1 rounded-full bg-ink-600 text-slate-300 border border-white/10">cpu</span>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-5 py-8 space-y-6">
+
+    <!-- ---------------- Settings (Ollama) ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Ollama</h2>
+        <span id="ollamaStatus" class="text-xs px-2.5 py-1 rounded-full bg-ink-600 text-slate-300 border border-white/10">checking...</span>
+      </div>
+      <p class="text-xs text-slate-500 mb-3">
+        The assistant sends your transcribed speech to a local Ollama model and speaks the reply.
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label for="ollamaHost" class="ts-label">Server URL</label>
+          <input id="ollamaHost" type="text" class="ts-input mt-2" placeholder="http://localhost:11434" />
+          <span class="block mt-1 text-xs text-slate-500">
+            Start Ollama with <code>ollama serve</code>. Pull a model with e.g. <code>ollama pull llama3.2</code>.
+          </span>
+        </div>
+        <div>
+          <label for="ollamaModel" class="ts-label">Model</label>
+          <div class="mt-2 flex gap-2">
+            <input id="ollamaModel" list="ollamaModelList" type="text" class="ts-input" placeholder="llama3.2" />
+            <button id="listModelsBtn" class="ts-btn ts-btn-ghost" type="button">List</button>
+          </div>
+          <datalist id="ollamaModelList"></datalist>
+          <span class="block mt-1 text-xs text-slate-500">
+            Click <strong>List</strong> to see models installed on the Ollama server.
+          </span>
+        </div>
+        <div>
+          <label for="ollamaPrompt" class="ts-label">System prompt</label>
+          <textarea id="ollamaPrompt" rows="3" class="ts-input mt-2"
+                    placeholder="Persona / behavior instructions sent before each conversation..."></textarea>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button id="saveSettingsBtn" class="ts-btn ts-btn-primary" type="button">Save settings</button>
+          <button id="resetChatBtn" class="ts-btn ts-btn-ghost text-xs py-1.5" type="button">Reset conversation</button>
+          <span id="settingsStatus" class="text-xs text-slate-400"></span>
+        </div>
+
+        <!-- quick test -->
+        <div class="border-t border-white/10 pt-4">
+          <label for="chatTest" class="ts-label">Test chat (optional)</label>
+          <div class="mt-2 flex gap-2">
+            <input id="chatTest" type="text" class="ts-input" placeholder="Say something to the model..." />
+            <button id="chatTestBtn" class="ts-btn ts-btn-ghost" type="button">Send</button>
+          </div>
+          <p id="chatTestReply" class="mt-2 text-sm text-slate-300"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- Setup / download (single model) ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Model</h2>
+        <p id="modelMeta" class="text-xs text-slate-500"></p>
+      </div>
+
+      <!-- Readiness banner -->
+      <div id="setupBox" class="hidden mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <span id="setupMsg" class="text-sm text-amber-200"></span>
+          <button id="downloadBtn" class="ts-btn ts-btn-primary" type="button">Download</button>
+        </div>
+        <div id="progWrap" class="hidden mt-3 h-2.5 rounded-full bg-black/40 overflow-hidden">
+          <div id="progBar" class="h-full w-0 bg-brand-500 transition-all"></div>
+        </div>
+        <span id="downloadStatus" class="block mt-2 text-xs text-slate-400"></span>
+      </div>
+
+      <p id="readyMsg" class="hidden mt-3 text-sm text-emerald-400 flex items-center gap-2">
+        <span class="h-2 w-2 rounded-full bg-emerald-400"></span> Ready to use.
+      </p>
+    </section>
+
+    <!-- ---------------- Generate ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400 mb-4">Generate</h2>
+
+      <div class="space-y-4">
+        <div>
+          <label for="voice" class="ts-label">Voice</label>
+          <select id="voice" class="ts-input mt-2"></select>
+        </div>
+        <div>
+          <label for="speed" class="ts-label">Speed: <span id="speedVal" class="text-brand-400 font-medium">1.0</span></label>
+          <input id="speed" type="range" min="0.5" max="2" step="0.1" value="1.0" class="ts-range mt-2" />
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <label for="language" class="ts-label">Language</label>
+        <select id="language" class="ts-input mt-2"></select>
+      </div>
+
+      <div class="mt-4">
+        <label for="text" class="ts-label">Text to speak</label>
+        <textarea id="text" rows="4" class="ts-input mt-2" placeholder="Type what you want spoken..."></textarea>
+      </div>
+
+      <button id="genBtn" class="ts-btn ts-btn-primary w-full mt-5 justify-center py-3 text-base">Generate</button>
+    </section>
+
+    <!-- ---------------- Received audio (debug) ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Received audio</h2>
+        <button id="refreshRecordingsBtn" class="ts-btn ts-btn-ghost text-xs py-1.5" type="button">Refresh</button>
+      </div>
+      <p class="text-xs text-slate-500 mb-3">
+        The most recent clips the device sent to be transcribed - play them back to check mic level.
+      </p>
+      <p id="recordingsEmpty" class="text-sm text-slate-500">No recordings yet.</p>
+      <ul id="recordingsList" class="space-y-3"></ul>
+    </section>
+
+    <!-- ---------------- Queue ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Queue</h2>
+        <button id="clearBtn" class="ts-btn ts-btn-ghost text-xs py-1.5" type="button">Clear finished</button>
+      </div>
+      <p id="queueEmpty" class="text-sm text-slate-500">Nothing queued yet.</p>
+      <ul id="queueList" class="space-y-3"></ul>
+    </section>
+
+    <p id="statusMsg" class="text-sm text-slate-400 min-h-[1.25rem]"></p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
