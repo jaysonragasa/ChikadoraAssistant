@@ -33,7 +33,7 @@ namespace Audio {
     constexpr float MIC_GAIN = 3.0f;
 
     // Speaker output volume: 0.0 silent .. 1.0 full scale. >1.0 amplifies/clips.
-    constexpr float SPEAKER_VOLUME = 1.0f;
+    constexpr float SPEAKER_VOLUME = 3.0f;
 
     // true  -> transcribed speech goes to the LLM (/api/chat) and the reply is spoken.
     // false -> the assistant just echoes what it heard.
