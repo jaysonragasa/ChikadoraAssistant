@@ -8,15 +8,15 @@ API keys.
 
 ```
       ┌──────────────────── ESP32-C3 (Chikadora) ─────────────────────┐
- tap →│  INMP441 mic ─▶ record 16kHz PCM                               │
+ tap →│  INMP441 mic ─▶ record 16kHz PCM                              │
       │                    │                                           │
       │                    ▼   POST /api/transcribe (WAV)              │
-      │           ┌──────────────────────────────────────┐            │
-      │           │            Local server (PC)          │            │
-      │           │  Whisper STT ─▶ text                  │            │
-      │           │  Ollama chat ─▶ reply   (/api/chat)   │            │
-      │           │  Kokoro TTS  ─▶ WAV jobs (/api/synthesize)         │
-      │           └──────────────────────────────────────┘            │
+      │           ┌────────────────────────────────────────────┐       │
+      │           │            Local server (PC)               │       │
+      │           │  Whisper STT ─▶ text                       │      │
+      │           │  Ollama chat ─▶ reply   (/api/chat)        │      │
+      │           │  Kokoro TTS  ─▶ WAV jobs (/api/synthesize) │      │
+      │           └────────────────────────────────────────────┘       │
       │                    │   GET /api/jobs/{id}/result (WAV)         │
       │                    ▼                                           │
       │  MAX98357 amp ◀─ play reply     SSD1306 shows a face          │
@@ -41,6 +41,10 @@ synthesized and played back to back, so playback stays smooth on the tiny MCU.
 
 ### Wiring
 
+![alt text](https://github.com/jaysonragasa/ChikadoraAssistant/blob/main/perfboard/chikaboard.png?raw=true)  
+
+Navigate to [PerfDesigner](https://perfdesigner.vercel.app/) and download this file and open in PerfDesigner [chikadoraboard.json](https://github.com/jaysonragasa/ChikadoraAssistant/blob/main/perfboard/chikadoraboard.json)
+  
 The mic and amplifier **share** the I2S clock lines (`BCLK`/`LRC`) because the
 C3 has a single I2S peripheral; the firmware installs/uninstalls the I2S driver
 as it switches between recording and playback.
