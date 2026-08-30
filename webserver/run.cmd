@@ -1,7 +1,7 @@
 @echo off
 REM Launch the Kokoro TTS local web app.
 REM Activates the local venv (created during setup) and starts the server
-REM bound to 0.0.0.0:8000 so the Mochi ESP32-C3 can reach it over the LAN.
+REM bound to 0.0.0.0:8000 so the Chikadora ESP32-C3 can reach it over the LAN.
 REM Open http://127.0.0.1:8000 in your browser.
 
 setlocal

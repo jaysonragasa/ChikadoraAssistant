@@ -88,7 +88,7 @@ void setup() {
     
     // Give the USB CDC time to enumerate on the PC so we don't miss logs
     delay(3000);
-    Serial.println("\n\n--- MOCHI ASSISTANT BOOTING ---");
+    Serial.println("\n\n--- CHIKADORA ASSISTANT BOOTING ---");
 
     // 1. Initialize Display First (for feedback)
     displayManager = new OledFaceDisplay(OLED_SDA, OLED_SCL);
@@ -315,7 +315,7 @@ void loop() {
                 } else {
                     // Chat failed (no key, network, etc.) - speak a short notice
                     // so the failure is audible instead of silently echoing.
-                    Serial.println("Gemini reply empty; speaking a fallback notice.");
+                    Serial.println("LLM reply empty; speaking a fallback notice.");
                     toSpeak = "Sorry, I couldn't reach my brain right now.";
                 }
 #endif

@@ -1,9 +1,9 @@
-# Kokoro TTS (local web app for Mochi)
+# Kokoro TTS (local web app for Chikadora)
 
 A local, single-user text-to-speech web app built around **Kokoro-82M** — a
 lightweight, fast preset-voice model. It's a trimmed, Kokoro-only version of
-Local TTS Studio and keeps the **exact same HTTP API**, so the Mochi ESP32-C3
-firmware works against it unchanged.
+Local TTS Studio and keeps the **exact same HTTP API**, so the Chikadora
+ESP32-C3 firmware works against it unchanged.
 
 Pick a voice, set a speed, type text, and generate. Everything runs on your
 machine; the server binds locally (or to your LAN so the ESP32 can reach it).
@@ -85,7 +85,7 @@ run.cmd
 - If Kokoro isn't installed/downloaded yet, the app shows a **Set up / Download**
   banner with a progress bar; the Generate button stays disabled until ready.
 
-## Point the Mochi firmware here
+## Point the Chikadora firmware here
 
 The firmware posts to this server's IP on port 8000. In `src/main.cpp` set
 `SERVER_IP` to this machine's LAN address (the same value it used for Local TTS

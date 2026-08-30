@@ -1,29 +1,31 @@
-# Mochi — ESP32-C3 Voice Assistant
+# Chikadora — ESP32-C3 Voice Assistant
 
-Mochi is a tap-to-talk voice assistant built on an **ESP32-C3 Supermini**. You
-tap a touch pad, speak, and Mochi transcribes your speech, asks a local LLM for
-a reply, and speaks the answer back — all powered by a small local server on
-your PC. No cloud accounts, no API keys.
+Chikadora is a tap-to-talk voice assistant built on an **ESP32-C3 Supermini**.
+You tap a touch pad, speak, and Chikadora transcribes your speech, asks a local
+LLM for a reply, and speaks the answer back — all powered by a small local
+server on your PC. Everything runs on your own machine: no cloud accounts, no
+API keys.
 
 ```
-        ┌─────────────────────── ESP32-C3 (Mochi) ───────────────────────┐
-  tap → │  INMP441 mic ─▶ record 16kHz PCM                                │
-        │                     │                                           │
-        │                     ▼   POST /api/transcribe (WAV)              │
-        │            ┌──────────────────────────────────────┐            │
-        │            │            Local server (PC)          │            │
-        │            │  Whisper STT ─▶ text                  │            │
-        │            │  Ollama chat ─▶ reply   (/api/chat)   │            │
-        │            │  Kokoro TTS  ─▶ WAV job (/api/synthesize)          │
-        │            └──────────────────────────────────────┘            │
-        │                     │   GET /api/jobs/{id}/result (WAV)         │
-        │                     ▼                                           │
-        │  MAX98357 amp ◀─ play reply     SSD1306 shows a face            │
-        └─────────────────────────────────────────────────────────────────┘
+      ┌──────────────────── ESP32-C3 (Chikadora) ─────────────────────┐
+ tap →│  INMP441 mic ─▶ record 16kHz PCM                               │
+      │                    │                                           │
+      │                    ▼   POST /api/transcribe (WAV)              │
+      │           ┌──────────────────────────────────────┐            │
+      │           │            Local server (PC)          │            │
+      │           │  Whisper STT ─▶ text                  │            │
+      │           │  Ollama chat ─▶ reply   (/api/chat)   │            │
+      │           │  Kokoro TTS  ─▶ WAV jobs (/api/synthesize)         │
+      │           └──────────────────────────────────────┘            │
+      │                    │   GET /api/jobs/{id}/result (WAV)         │
+      │                    ▼                                           │
+      │  MAX98357 amp ◀─ play reply     SSD1306 shows a face          │
+      └────────────────────────────────────────────────────────────────┘
 ```
 
-The flow at speak time: **tap → record → transcribe (Whisper) → chat (Ollama)
-→ synthesize (Kokoro) → play**.
+Flow at speak time: **tap → record → transcribe (Whisper) → chat (Ollama) →
+synthesize (Kokoro) → play**. Long replies are chopped into short clips that are
+synthesized and played back to back, so playback stays smooth on the tiny MCU.
 
 ---
 
@@ -61,6 +63,9 @@ Extra module pins:
 - **MAX98357 `GAIN`** — leave floating for 9 dB (default). `SD` (shutdown) can be left high/floating to keep the amp enabled.
 - **SSD1306** I2C address is `0x3C`.
 
+> The INMP441 is sensitive to a noisy 3.3 V rail. If recordings hiss, keep its
+> wiring short and add a 0.1 µF cap across its VDD/GND.
+
 ---
 
 ## 2. Prerequisites
@@ -77,9 +82,7 @@ Extra module pins:
 
 The server lives in [`webserver/`](webserver/) and exposes the HTTP API the
 firmware calls. Full details are in [`webserver/README.md`](webserver/README.md);
-the essentials:
-
-Run these from the `webserver` folder:
+the essentials, run from the `webserver` folder:
 
 ```cmd
 cd webserver
@@ -107,9 +110,20 @@ run.cmd
 - **Kokoro TTS** weights (~350 MB) download on first use, or via the **Download**
   button in the web UI. The default voice is `af_sarah`.
 - **Whisper STT** (`faster-whisper`, `base` model) downloads on first transcription.
+- Synthesized audio is downsampled to **16 kHz** by default (`TTS_OUTPUT_RATE`)
+  so clips are small enough to fit in the device's RAM.
 
 > **Find this PC's LAN IP** (you'll need it for the firmware): run `ipconfig`
 > and note the IPv4 address, e.g. `192.168.1.60`.
+
+### Web UI features
+
+- **Generate** speech from typed text (voice + speed) with a job **queue**.
+- **Ollama** card — set the server URL, pick a model (**List** button), edit the
+  system prompt, run a **Test chat**, and **Reset conversation**.
+- **Received audio** card — plays back the last clips the device sent for
+  transcription, so you can hear exactly what the mic captured (great for tuning
+  `MIC_GAIN`).
 
 ---
 
@@ -144,8 +158,11 @@ Edit the config block near the top of [`src/main.cpp`](src/main.cpp):
 #define SERVER_PORT   8000
 #define VOICE_ID      "af_sarah"        // any Kokoro voice
 
-#define MIC_GAIN      4.0f              // mic loudness boost (raise if too quiet)
+#define MIC_GAIN      3.0f              // mic gain over unity (~2-5 typical)
 #define USE_LLM       1                 // 1 = Ollama reply, 0 = echo what you said
+
+#define PLAYBACK_MODE PLAYBACK_CHUNK    // PLAYBACK_CHUNK or PLAYBACK_STREAM
+#define WORDS_PER_CHUNK 10              // clip size in chunk mode
 ```
 
 Build and flash (from the project root, with the device plugged in):
@@ -181,12 +198,37 @@ walks the whole pipeline:
 ```
 Heard: what's the weather like on mars
 Asking the LLM...
-LLM: Mars is cold and dry, with an average temperature around minus 60 Celsius...
+LLM: Mars is cold and dry, averaging about minus 60 Celsius.
+Split reply into 2 clip(s).
+[Clip 1/2] job a1b2...: "Mars is cold and dry, averaging"
+[Clip 2/2] job c3d4...: "about minus 60 Celsius."
 TTS Job done! Playing audio...
+Next clip 2/2 (job c3d4...)
+All clips played.
 ```
 
 Set `USE_LLM 0` to bypass the LLM and just echo your speech (handy for testing
 the mic/speaker path).
+
+---
+
+## How playback works
+
+The ESP32-C3 has little RAM and a single core, so real-time audio streaming
+tends to stutter. Chikadora avoids that:
+
+- **`PLAYBACK_CHUNK` (default):** the reply is split into ~`WORDS_PER_CHUNK`-word
+  clips (broken at sentence boundaries when possible). All clips are queued to
+  the server at once, so it synthesizes the next clip while the current one
+  plays. Each clip is downloaded fully into RAM and then played — smooth and
+  gap-free, with only short natural pauses between clips.
+- **`PLAYBACK_STREAM`:** the whole reply is one job, streamed to I2S as it
+  downloads. Handles any length with a fixed small buffer, but can stutter if
+  the network hiccups. Flip `PLAYBACK_MODE` to try it.
+
+Clips are kept small by the server's 16 kHz `TTS_OUTPUT_RATE`. If a clip is still
+too big to fit in RAM it's skipped with a log line — lower `TTS_OUTPUT_RATE` or
+`WORDS_PER_CHUNK` if you see that.
 
 ---
 
@@ -200,12 +242,15 @@ the mic/speaker path).
 | `SERVER_IP` | `192.168.1.60` | LAN IP of the PC running the server |
 | `SERVER_PORT` | `8000` | Server port |
 | `VOICE_ID` | `af_sarah` | Kokoro voice |
-| `MIC_GAIN` | `4.0f` | Software mic gain (raise if too quiet, lower if clipped) |
+| `MIC_GAIN` | `3.0f` | Mic gain as a clean multiplier over unity (1.0 = unity). Raise if too quiet, lower if it clips. ~2–5 typical |
 | `USE_LLM` | `1` | `1` = Ollama reply, `0` = echo |
+| `PLAYBACK_MODE` | `PLAYBACK_CHUNK` | `PLAYBACK_CHUNK` (chop + buffered play) or `PLAYBACK_STREAM` (stream one job) |
+| `WORDS_PER_CHUNK` | `10` | Clip size in chunk mode |
 
+The mic capture also runs a DC-blocking high-pass to keep speech sharp.
 Recording length is capped by the mic buffer (`maxBufferSize` in
-`include/I2SMicrophone.h`, 144000 bytes ≈ **4.5 s** at 16 kHz). Tap again to
-stop early. Increase the constant for longer utterances (bounded by RAM).
+`include/I2SMicrophone.h`, 144000 bytes ≈ **4.5 s** at 16 kHz); tap again to stop
+early. It auto-shrinks if the heap is low.
 
 ### Server environment variables
 
@@ -214,7 +259,7 @@ stop early. Increase the constant for longer utterances (bounded by RAM).
 | `TTS_HOST` | `127.0.0.1` (`run.cmd` sets `0.0.0.0`) | Bind address |
 | `TTS_PORT` | `8000` | Port |
 | `TTS_DEVICE` | `cpu` | `cuda:0` on a GPU box |
-| `TTS_OUTPUT_RATE` | `16000` | TTS output sample rate. Lower (`12000`/`8000`) shrinks clips so longer replies fit in the device's RAM; higher is crisper but bigger |
+| `TTS_OUTPUT_RATE` | `16000` | TTS output sample rate. Lower (`12000`/`8000`) shrinks clips so more fits in the device's RAM; higher is crisper but bigger |
 | `STT_MODEL` | `base` | faster-whisper size (`tiny`/`base`/`small`/...) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Model name (override in the UI) |
@@ -227,15 +272,20 @@ Ollama host/model/system-prompt are also editable in the web UI and saved to
 
 ## Troubleshooting
 
-**Device reboots when audio starts playing.** Fixed in firmware — the mic
-buffer is freed before playback so the audio path has enough heap. Make sure
-you're on a current build (`uploadmon.cmd`).
+**Device reboots when audio starts playing.** Fixed — the mic buffer is freed
+before playback so the audio path has enough heap. Make sure you're on a current
+build (`uploadmon.cmd`).
 
-**Playback is choppy/laggy.** The device downloads the whole WAV into RAM before
-playing (no real-time streaming), so this should be gone on current firmware.
+**Playback is choppy/laggy.** Use `PLAYBACK_CHUNK` (the default). If you're on
+`PLAYBACK_STREAM`, switch back — streaming stutters on this MCU.
 
-**Mic can't hear you / transcripts are wrong.** Raise `MIC_GAIN` (try 6–8). If
-speech sounds crunchy/distorted, lower it. Also speak within ~4.5 s per tap.
+**A long reply cuts out / "Not enough contiguous heap" in the log.** A clip was
+too big for RAM. Lower `TTS_OUTPUT_RATE` (e.g. 12000) or `WORDS_PER_CHUNK`.
+
+**Mic sounds grainy / not sharp, or transcripts are wrong.** `MIC_GAIN` is now a
+clean multiplier over unity — if speech clips/distorts, lower it (toward 2); if
+too quiet, raise it (4–5). Use the **Received audio** card to listen back and
+tune. Speak within ~4.5 s per tap.
 
 **"Could not reach Ollama..."** Ollama isn't running or the URL is wrong. Start
 it (`ollama serve`) and confirm the **Ollama** card shows **connected**.
@@ -255,14 +305,14 @@ CDC (already enabled via `build_flags` in `platformio.ini`).
 ## Project layout
 
 ```
-Mochi/
+ChikadoraAssistant/
 ├─ platformio.ini            PlatformIO config (board, libs, USB CDC)
 ├─ upload.cmd / uploadmon.cmd  build + flash helpers
 ├─ include/                  interfaces + hardware wrappers (mic, amp, display, touch, API client)
 ├─ src/                      main.cpp (state machine + config) + implementations
-└─ webserver/               local TTS/STT/LLM server (see webserver/README.md)
+└─ webserver/                local TTS/STT/LLM server (see webserver/README.md)
    ├─ backend/               FastAPI app: Kokoro TTS, Whisper STT, Ollama chat
-   ├─ frontend/              web UI (voice + speed + Ollama settings + queue)
+   ├─ frontend/              web UI (generate, Ollama settings, received audio, queue)
    └─ run.cmd                start the server on 0.0.0.0:8000
 ```
 

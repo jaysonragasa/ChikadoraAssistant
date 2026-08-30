@@ -1,5 +1,5 @@
 """
-Speech-to-text for transcription (used by the Mochi firmware's /api/transcribe).
+Speech-to-text for transcription (used by the Chikadora firmware's /api/transcribe).
 
 Uses faster-whisper (CTranslate2) which runs well on CPU and downloads a small
 model from Hugging Face on first use. Kept optional and lazily loaded: if the

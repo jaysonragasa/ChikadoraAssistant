@@ -3,12 +3,12 @@ Kokoro TTS local web app backend (Kokoro-only build).
 
 A small FastAPI service that exposes a single-model catalog (Kokoro-82M), lets
 you download it on demand with progress, and synthesizes speech. It keeps the
-exact same API surface as the multi-model Local TTS Studio so the Mochi
+exact same API surface as the multi-model Local TTS Studio so the Chikadora
 ESP32-C3 firmware works against it unchanged.
 
 Endpoints:
   GET  /api/health                 liveness + device
-  POST /api/transcribe             speech-to-text (used by the Mochi firmware)
+  POST /api/transcribe             speech-to-text (used by the Chikadora firmware)
   GET  /api/models                 catalog with per-model download status
   GET  /api/models/{id}/options    dynamic choices (voices)
   POST /api/models/{id}/download   start a background download
@@ -152,7 +152,7 @@ def update_settings(
 def chat(text: str = Form(...)):
     """Send transcribed text to Ollama and return the assistant's reply.
 
-    Used by the Mochi firmware between transcription and TTS.
+    Used by the Chikadora firmware between transcription and TTS.
     """
     try:
         reply = ollama.chat(text)
@@ -189,7 +189,7 @@ def transcribe(
     audio: UploadFile = File(...),
     language: str = Form(""),
 ):
-    """Transcribe an uploaded recording to text (used by the Mochi firmware)."""
+    """Transcribe an uploaded recording to text (used by the Chikadora firmware)."""
     raw = audio.file.read()
     saved = _save_recording(raw)              # debug: keep a copy to listen to
     wav_in, sr_in = _decode_wav_bytes(raw, audio.filename)

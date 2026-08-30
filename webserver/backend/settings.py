@@ -30,7 +30,7 @@ _DEFAULTS = {
     "ollama_host": "http://localhost:11434",
     "ollama_model": "llama3.2",
     "ollama_system_prompt": (
-        "You are Mochi, a friendly and concise voice assistant. Your replies "
+        "You are Chikadora, a friendly and concise voice assistant. Your replies "
         "are read aloud by a small speaker, so keep them short and "
         "conversational, usually one to three sentences. Avoid markdown, "
         "bullet lists, code blocks, and emoji. Speak naturally."
