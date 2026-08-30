@@ -17,6 +17,11 @@ tqdm>=4.66.0
 # Speech-to-text for /api/transcribe (CPU-friendly, offline).
 faster-whisper>=1.0.0
 
+# Alternative STT engine: Moonshine (set STT_ENGINE=moonshine). Optimized for
+# short/medium English speech with low latency. Runs via Transformers (torch is
+# already pulled in by kokoro). Only needed if you use the moonshine engine.
+transformers>=4.48.0
+
 # Kokoro TTS engine. Pulls in torch as a dependency. NOTE: install a CPU torch
 # wheel first (see README) so pip doesn't grab a CUDA build on a CPU-only
 # machine. Some non-English languages also need the espeak-ng system package;

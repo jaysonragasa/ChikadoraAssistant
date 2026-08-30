@@ -264,7 +264,11 @@ early. It auto-shrinks if the heap is low.
 | `TTS_PORT` | `8000` | Port |
 | `TTS_DEVICE` | `cpu` | `cuda:0` on a GPU box |
 | `TTS_OUTPUT_RATE` | `16000` | TTS output sample rate. Lower (`12000`/`8000`) shrinks clips so more fits in the device's RAM; higher is crisper but bigger |
+| `STT_ENGINE` | `faster-whisper` | STT engine: `faster-whisper` or `moonshine` (fast, short-English) |
 | `STT_MODEL` | `base` | faster-whisper size (`tiny`/`base`/`small`/...) |
+| `MOONSHINE_MODEL` | `UsefulSensors/moonshine-base` | Moonshine HF repo (`...moonshine-tiny` for smaller/faster) |
+| `STT_LANGUAGE` | `en` | Forced language for faster-whisper (`auto` to detect) |
+| `STT_VAD` | `0` | `1` re-enables the VAD filter (faster-whisper) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Model name (override in the UI) |
 | `SAVE_RECORDINGS` | `1` | Keep the last 20 clips the device sent (playable in the web UI's "Received audio" card); set `0` to disable |

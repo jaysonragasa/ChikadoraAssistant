@@ -18,8 +18,12 @@ private:
     float dcPrevIn = 0.0f;
     float dcPrevOut = 0.0f;
     
-    // Max buffer size: ~4.5 seconds of 16kHz 16-bit Mono = 144,000 bytes
-    const size_t maxBufferSize = 144000; 
+    // Target max recording length: ~8 seconds of 16kHz 16-bit mono = 256,000
+    // bytes, so longer questions aren't cut off. startRecording() pre-checks the
+    // heap and shrinks this to whatever safely fits (the C3 may not have 256 KB
+    // contiguous free), so effective length can be a bit less. Tap again to stop
+    // early.
+    const size_t maxBufferSize = 256000; 
 
 public:
     I2SMicrophone(int bclk, int ws, int data);
