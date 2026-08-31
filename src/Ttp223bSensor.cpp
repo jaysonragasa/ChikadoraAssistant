@@ -4,18 +4,17 @@
 Ttp223bSensor::Ttp223bSensor(int pin) : pin(pin) {}
 
 void Ttp223bSensor::initialize() {
-    // TTP223B drives HIGH when touched. Use a pulldown so a noisy/floating line
-    // rests LOW rather than picking up spurious highs (the sensor overpowers it).
-    pinMode(pin, INPUT_PULLDOWN);
+    // Plain INPUT, exactly like the working main branch. (INPUT_PULLDOWN held
+    // the line low and broke touch on this hardware - the TTP223B output on
+    // this board doesn't overpower the internal pulldown.)
+    pinMode(pin, INPUT);
 }
 
 bool Ttp223bSensor::isTouched() {
     bool raw = digitalRead(pin) == HIGH;
-    unsigned long now = millis();
-    if (raw != lastRaw) {          // level changed -> restart the stability timer
+    if (raw != lastRaw) {   // DEBUG: confirm the pin reacts to touch
         lastRaw = raw;
-        stableSince = now;
+        Serial.printf("[Touch] GPIO%d -> %s\n", pin, raw ? "HIGH" : "LOW");
     }
-    // Only report a touch once the pad has been HIGH steadily past the debounce.
-    return raw && (now - stableSince >= debounceMs);
+    return raw;   // direct read, no debounce (matches main)
 }
