@@ -102,9 +102,12 @@ void VoiceAssistant::handleListening() {
     Serial.printf("Free heap after releasing mic buffer: %u bytes\n", ESP.getFreeHeap());
 
     if (heard.length() == 0) {
-        Serial.println("No text heard.");
-        display.shakeEyes();   // "I didn't catch that"
-        goIdle();
+        Serial.println("No text heard; speaking a retry prompt.");
+        display.shakeEyes();                       // visual "huh?"
+        if (!queueReply(Config::Messages::NO_SPEECH)) {
+            goIdle();   // couldn't even queue TTS (server down) - just go idle
+        }
+        // On success we stay in Processing and speak the prompt.
         return;
     }
 
@@ -126,7 +129,7 @@ String VoiceAssistant::think(const String& heard) {
     }
     // Chat failed (server down, no model, etc.) - say something audible.
     Serial.println("LLM reply empty; speaking a fallback notice.");
-    return "Sorry, I couldn't reach my brain right now.";
+    return Config::Messages::LLM_ERROR;
 }
 
 bool VoiceAssistant::queueReply(const String& text) {
