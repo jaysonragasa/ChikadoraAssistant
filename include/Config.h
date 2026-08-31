@@ -40,6 +40,14 @@ namespace Audio {
     constexpr bool USE_LLM = true;
 }
 
+// Canned spoken replies for failure cases (change the wording / language here).
+namespace Messages {
+    // Spoken when transcription comes back empty (nothing understood).
+    constexpr const char* NO_SPEECH = "Sorry, I didn't catch that. Please try again.";
+    // Spoken when the LLM can't be reached (server down, model missing, etc.).
+    constexpr const char* LLM_ERROR = "Sorry, I couldn't reach my brain right now.";
+}
+
 namespace Playback {
     constexpr PlaybackMode MODE = PlaybackMode::Stream;
 
