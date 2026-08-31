@@ -2,10 +2,9 @@
 
 I2SMicrophone::I2SMicrophone(int bclk, int ws, int data)
     : bclkPin(bclk), wsPin(ws), dataPin(data), recording(false) {
-    // NOTE: Do NOT reserve maxBufferSize here. Reserving 144 KB at construction
-    // holds it for the life of the object and starves ESP32-audioI2S of the
-    // heap it needs to buffer playback (causing an OOM store-fault crash on the
-    // no-PSRAM C3). We reserve in startRecording() and free in releaseBuffer().
+    // NOTE: Do NOT reserve maxBufferSize here. Reserving at construction holds
+    // the memory for the object's life and starves audio playback on the
+    // no-PSRAM C3. We reserve in startRecording() and free in releaseBuffer().
 }
 
 I2SMicrophone::~I2SMicrophone() {
@@ -13,18 +12,18 @@ I2SMicrophone::~I2SMicrophone() {
 }
 
 void I2SMicrophone::initialize() {
-    // We defer I2S installation to startRecording to avoid conflicts with I2SAmplifier
-    // on the ESP32-C3 which only has one I2S port (I2S_NUM_0).
+    // I2S is installed on demand (startRecording / startMonitoring) since the
+    // mic shares the single I2S_NUM_0 port with the amplifier.
 }
 
-void I2SMicrophone::startRecording() {
-    // Release any existing driver (e.g., from ESP32-audioI2S)
-    i2s_driver_uninstall(I2S_NUM_0);
-    
+// Shared I2S RX setup for the INMP441 (16 kHz, 32-bit slots, left channel).
+void I2SMicrophone::installRxDriver() {
+    i2s_driver_uninstall(I2S_NUM_0); // release whatever held the port
+
     i2s_config_t i2s_config = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
         .sample_rate = 16000,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT, // INMP441 uses 32-bit slots
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
@@ -42,19 +41,29 @@ void I2SMicrophone::startRecording() {
     };
     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
     i2s_set_pin(I2S_NUM_0, &pin_config);
-    
-    // Reserve up front so recording never reallocates/grows mid-capture. We
-    // pre-check the largest CONTIGUOUS free block first: if we blindly called
-    // reserve() when the heap is fragmented, operator new would throw
-    // std::bad_alloc, and the C3's C++ exception unwinder crashes on a throw
-    // (hard reboot) instead of recovering. So cap to what safely fits.
+}
+
+// Convert a 24-bit INMP441 sample to a gained, clamped 16-bit value.
+int I2SMicrophone::applyGainClamp(int32_t s24) {
+    int32_t s = (int32_t)((float)s24 * micGain / 256.0f);
+    if (s > 32767) s = 32767;
+    else if (s < -32768) s = -32768;
+    return (int)s;
+}
+
+void I2SMicrophone::startRecording() {
+    monitoring = false;
+    installRxDriver();
+
+    // Reserve up front (pre-checking contiguous heap so reserve() can't throw
+    // std::bad_alloc, which would hard-reboot the C3). Cap to what safely fits.
     audioBuffer.clear();
-    const size_t MARGIN = 24 * 1024; // headroom for WiFi/HTTP during the upload
+    const size_t MARGIN = 24 * 1024;
     size_t largest = ESP.getMaxAllocHeap();
     size_t safeCap = maxBufferSize;
     if (largest < maxBufferSize + MARGIN) {
         safeCap = (largest > MARGIN) ? (largest - MARGIN) : 0;
-        safeCap -= (safeCap % 2); // keep 16-bit sample alignment
+        safeCap -= (safeCap % 2);
         Serial.printf("Mic: Low contiguous heap (%u B); capping record buffer to %u B\n",
                       (unsigned)largest, (unsigned)safeCap);
     }
@@ -62,9 +71,15 @@ void I2SMicrophone::startRecording() {
     if (bufferCap >= 320) {
         audioBuffer.reserve(bufferCap);
     }
-    // Reset the DC blocker so a stale offset doesn't thump at the start.
+
     dcPrevIn = 0.0f;
     dcPrevOut = 0.0f;
+
+    unsigned long now = millis();
+    recordStartMs = now;
+    lastVoiceMs = now;
+    sawSpeech = false;
+
     recording = true;
     Serial.printf("Mic: Started recording (cap %u B, ~%.1fs)...\n",
                   (unsigned)bufferCap, bufferCap / 32000.0f);
@@ -79,42 +94,47 @@ void I2SMicrophone::update() {
         return;
     }
 
-    size_t bytes_read;
+    size_t bytes_read = 0;
     int32_t tempBuf[128];
-    // Read non-blocking
     esp_err_t result = i2s_read(I2S_NUM_0, &tempBuf, sizeof(tempBuf), &bytes_read, 0);
-    
-    if (result == ESP_OK && bytes_read > 0) {
-        int samples = bytes_read / 4; 
-        for(int i = 0; i < samples; i++) {
-            // The INMP441 puts its 24-bit sample in the top bits of the 32-bit
-            // slot. Extract the full 24-bit value (arithmetic shift keeps sign)
-            // so we keep resolution while applying gain - shifting down first
-            // and then amplifying is what made the audio grainy.
-            int32_t s24 = tempBuf[i] >> 8;   // signed, +/- 2^23
 
-            // DC blocker (one-pole high-pass ~13 Hz): removes the mic's DC bias
-            // and subsonic rumble that otherwise dull the sound and clip early.
+    int framePeak = 0;
+    if (result == ESP_OK && bytes_read > 0) {
+        int samples = bytes_read / 4;
+        for (int i = 0; i < samples; i++) {
+            int32_t s24 = tempBuf[i] >> 8;   // signed 24-bit
+
+            // DC blocker (one-pole high-pass ~13 Hz) keeps speech sharp.
             float in = (float)s24;
             float hp = in - dcPrevIn + 0.995f * dcPrevOut;
             dcPrevIn = in;
             dcPrevOut = hp;
 
-            // Apply gain at full resolution, then scale 24-bit -> 16-bit.
-            // micGain 1.0 == unity (24-bit full scale maps to 16-bit full scale).
             int32_t sample = (int32_t)(hp * micGain / 256.0f);
-
-            // Clamp to the int16 range so loud input distorts gracefully
-            // instead of wrapping around (which would sound like harsh noise).
             if (sample > 32767) sample = 32767;
             else if (sample < -32768) sample = -32768;
             int16_t sample16 = (int16_t)sample;
-            
-            // Little-endian
+
+            int mag = sample16 < 0 ? -(int)sample16 : (int)sample16;
+            if (mag > framePeak) framePeak = mag;
+
             audioBuffer.push_back(sample16 & 0xFF);
             audioBuffer.push_back((sample16 >> 8) & 0xFF);
-            
             if (audioBuffer.size() >= bufferCap) break;
+        }
+    }
+
+    // End-of-speech: stop after enough trailing silence (voice mode).
+    if (silenceStopEnabled) {
+        unsigned long now = millis();
+        if (framePeak >= silenceThreshold) {
+            lastVoiceMs = now;
+            sawSpeech = true;
+        }
+        if (sawSpeech && (now - recordStartMs) >= minSpeechMs &&
+            (now - lastVoiceMs) >= silenceMs) {
+            Serial.println("Mic: Silence detected, stopping automatically.");
+            stopRecording();
         }
     }
 }
@@ -122,9 +142,48 @@ void I2SMicrophone::update() {
 void I2SMicrophone::stopRecording() {
     if (recording) {
         recording = false;
-        i2s_driver_uninstall(I2S_NUM_0); // Free the port for the speaker
+        i2s_driver_uninstall(I2S_NUM_0); // free the port for the speaker
         Serial.printf("Mic: Stopped recording. Total bytes: %u\n", audioBuffer.size());
     }
+}
+
+// --- Level monitoring (voice activation) ---
+void I2SMicrophone::startMonitoring() {
+    if (monitoring) return;
+    recording = false;
+    installRxDriver();
+    monitoring = true;
+}
+
+int I2SMicrophone::readPeakLevel() {
+    if (!monitoring) return 0;
+    size_t bytes_read = 0;
+    int32_t tempBuf[128];
+    esp_err_t result = i2s_read(I2S_NUM_0, &tempBuf, sizeof(tempBuf), &bytes_read, 0);
+    if (result != ESP_OK || bytes_read == 0) return 0;
+
+    int peak = 0;
+    int samples = bytes_read / 4;
+    for (int i = 0; i < samples; i++) {
+        int m = applyGainClamp(tempBuf[i] >> 8);
+        if (m < 0) m = -m;
+        if (m > peak) peak = m;
+    }
+    return peak;
+}
+
+void I2SMicrophone::stopMonitoring() {
+    if (!monitoring) return;
+    monitoring = false;
+    i2s_driver_uninstall(I2S_NUM_0);
+}
+
+void I2SMicrophone::setSilenceStop(bool enabled, int threshold,
+                                   unsigned long sMs, unsigned long minMs) {
+    silenceStopEnabled = enabled;
+    silenceThreshold = threshold;
+    silenceMs = sMs;
+    minSpeechMs = minMs;
 }
 
 uint8_t* I2SMicrophone::getAudioData() {
@@ -140,13 +199,12 @@ bool I2SMicrophone::isRecording() {
 }
 
 void I2SMicrophone::releaseBuffer() {
-    // swap-with-empty actually frees the vector's capacity (clear() would not).
     std::vector<uint8_t>().swap(audioBuffer);
     Serial.println("Mic: Released audio buffer to free heap for playback.");
 }
 
 void I2SMicrophone::setGain(float gain) {
-    if (gain < 0.1f) gain = 0.1f; // guard against silence/negative
+    if (gain < 0.1f) gain = 0.1f;
     micGain = gain;
     Serial.printf("Mic: Gain set to %.1fx\n", micGain);
 }

@@ -2,19 +2,21 @@
 #include <Arduino.h>
 
 #include "IDisplay.h"
+#include "ITrigger.h"
 #include "ITouchSensor.h"
 #include "IAudioInput.h"
 #include "IAudioOutput.h"
 #include "IApiClient.h"
 #include "Config.h"
 
-// Orchestrates the assistant: tap -> record -> transcribe -> chat -> synthesize
-// -> play. Depends only on the abstractions (interfaces), which are injected via
-// the constructor (Dependency Inversion), so it knows nothing about the concrete
-// OLED / mic / amp / HTTP client it drives.
+// Orchestrates the assistant: (tap or voice) -> record -> transcribe -> chat ->
+// synthesize -> play. Depends only on abstractions injected via the constructor
+// (Dependency Inversion). The ITrigger decides *how* a conversation starts
+// (touch vs. voice); `touch` is kept for a manual stop while recording.
 class VoiceAssistant {
 public:
     VoiceAssistant(IDisplay& display,
+                   ITrigger& trigger,
                    ITouchSensor& touch,
                    IAudioInput& mic,
                    IAudioOutput& speaker,
@@ -28,6 +30,7 @@ private:
 
     // Injected collaborators.
     IDisplay&     display;
+    ITrigger&     trigger;
     ITouchSensor& touch;
     IAudioInput&  mic;
     IAudioOutput& speaker;
@@ -35,7 +38,7 @@ private:
 
     // Runtime state.
     State  state = State::Idle;
-    bool   wasTouched = false;
+    bool   wasTouched = false;   // for manual stop-tap edge detection
     String currentJobId;
 
     // Chunked-playback queue: a TTS job id per clip, plus which one we're on.
@@ -44,8 +47,8 @@ private:
     int    clipIndex = 0;
 
     // State handlers.
-    void handleIdle(bool touched);
-    void handleListening(bool touched);
+    void handleIdle();
+    void handleListening();
     void handleProcessing();
     void handleSpeaking();
 

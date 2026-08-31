@@ -16,6 +16,12 @@ enum class PlaybackMode {
     Stream,  // send the whole reply as one job, stream it to I2S (any length)
 };
 
+// How a conversation is started.
+enum class TriggerMode {
+    Touch,   // tap the TTP223B pad
+    Voice,   // sound-activated: start when it hears you (touch still works as fallback)
+};
+
 namespace Wifi {
     constexpr const char* SSID = "Anikanik2G";
     constexpr const char* PASS = "QazWsx12345";
@@ -47,6 +53,21 @@ namespace Playback {
     // up front so the server synthesizes the next while the current one plays.
     constexpr int WORDS_PER_CHUNK = 10;
     constexpr int MAX_CLIPS       = 24;  // upper bound on clips per reply
+}
+
+namespace Trigger {
+    constexpr TriggerMode MODE = TriggerMode::Voice;  // Touch or Voice
+
+    // --- Voice activation (sound onset). Levels are 16-bit peak amplitude
+    //     (0..32767) after MIC_GAIN. Tune to your room/mic distance. ---
+    // Start recording when input peak stays above this for START_MIN_MS.
+    constexpr int           START_THRESHOLD = 3000;
+    constexpr unsigned long START_MIN_MS    = 120;   // debounce (ignore short pops)
+
+    // --- End-of-speech (silence) detection while recording ---
+    constexpr int           SILENCE_THRESHOLD = 1400; // below this counts as silence
+    constexpr unsigned long SILENCE_MS        = 900;   // trailing silence -> stop
+    constexpr unsigned long MIN_SPEECH_MS     = 400;   // always record at least this long
 }
 
 // GPIO wiring. The mic and amp share BCLK/LRC (single I2S peripheral).

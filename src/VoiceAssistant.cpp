@@ -3,11 +3,13 @@
 #include "TextChunker.h"
 
 VoiceAssistant::VoiceAssistant(IDisplay& display,
+                               ITrigger& trigger,
                                ITouchSensor& touch,
                                IAudioInput& mic,
                                IAudioOutput& speaker,
                                IApiClient& api)
-    : display(display), touch(touch), mic(mic), speaker(speaker), api(api) {}
+    : display(display), trigger(trigger), touch(touch),
+      mic(mic), speaker(speaker), api(api) {}
 
 void VoiceAssistant::begin() {
     Serial.begin(115200);
@@ -20,54 +22,70 @@ void VoiceAssistant::begin() {
 
     WifiConnector::connect(Config::Wifi::SSID, Config::Wifi::PASS);
 
-    touch.initialize();
+    trigger.begin();   // sets up touch and any trigger resources
 
     mic.initialize();
     mic.setGain(Config::Audio::MIC_GAIN);
+    // In voice mode, let recording end itself on trailing silence.
+    if (Config::Trigger::MODE == Config::TriggerMode::Voice) {
+        mic.setSilenceStop(true, Config::Trigger::SILENCE_THRESHOLD,
+                           Config::Trigger::SILENCE_MS, Config::Trigger::MIN_SPEECH_MS);
+    }
 
     speaker.initialize();
     speaker.setStreamingMode(Config::Playback::MODE == Config::PlaybackMode::Stream);
     speaker.setVolume(Config::Audio::SPEAKER_VOLUME);
 
-    Serial.println("System Ready. Tap to listen!");
+    const bool voice = (Config::Trigger::MODE == Config::TriggerMode::Voice);
+    Serial.println(voice ? "System Ready. Say something (or tap)!"
+                         : "System Ready. Tap to listen!");
+    trigger.onEnterIdle();  // begin idle monitoring (voice) / noop (touch)
 }
 
 void VoiceAssistant::loop() {
     display.update();
 
-    // Speaking/Processing run to the exclusion of touch handling.
     if (state == State::Speaking)   { handleSpeaking();   return; }
     if (state == State::Processing) { handleProcessing(); return; }
+    if (state == State::Idle)       { handleIdle();       }
+    else if (state == State::Listening) { handleListening(); }
 
-    const bool touched = touch.isTouched();
-    if (state == State::Idle)           handleIdle(touched);
-    else if (state == State::Listening) handleListening(touched);
-
-    wasTouched = touched;
     delay(10);
 }
 
 void VoiceAssistant::goIdle() {
     display.showIdle();
     state = State::Idle;
+    trigger.onEnterIdle();   // resume monitoring for the next start
 }
 
-void VoiceAssistant::handleIdle(bool touched) {
-    if (touched && !wasTouched) {
-        Serial.println("Touch detected! Starting recording...");
-        display.showListening();
-        speaker.playDingDong();     // audible feedback
-        mic.startRecording();
-        state = State::Listening;
+void VoiceAssistant::handleIdle() {
+    if (!trigger.triggered()) return;
+
+    trigger.onExitIdle();   // stop monitoring so the port is free for record/tone
+    Serial.println("Triggered! Starting recording...");
+    display.showListening();
+
+    // A feedback tone makes sense for touch; in voice mode it would talk over
+    // the user (who's already speaking), so skip it there.
+    if (Config::Trigger::MODE == Config::TriggerMode::Touch) {
+        speaker.playDingDong();
     }
+
+    mic.startRecording();
+    wasTouched = touch.isTouched();  // seed so a held finger isn't seen as a stop
+    state = State::Listening;
 }
 
-void VoiceAssistant::handleListening(bool touched) {
+void VoiceAssistant::handleListening() {
     mic.update();
 
-    // Stop on a second tap, or when the mic buffer fills automatically.
-    const bool tappedAgain = touched && !wasTouched;
-    if (!tappedAgain && mic.isRecording()) return;
+    // Stop on a manual tap, or when the mic stops itself (buffer full, or
+    // trailing silence in voice mode).
+    bool tNow = touch.isTouched();
+    bool tapStop = tNow && !wasTouched;
+    wasTouched = tNow;
+    if (!tapStop && mic.isRecording()) return;
 
     Serial.println("Stopping recording and processing...");
     mic.stopRecording();
