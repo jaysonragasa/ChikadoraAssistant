@@ -160,13 +160,23 @@ int I2SMicrophone::readPeakLevel() {
     size_t bytes_read = 0;
     int32_t tempBuf[128];
     esp_err_t result = i2s_read(I2S_NUM_0, &tempBuf, sizeof(tempBuf), &bytes_read, 0);
-    if (result != ESP_OK || bytes_read == 0) return 0;
+    if (result != ESP_OK || bytes_read < 4) return 0;
+    int samples = bytes_read / 4;
+
+    // Remove DC first (the INMP441 has a large bias) by subtracting the frame
+    // mean, THEN apply gain - same order as recording. Otherwise the DC offset
+    // dominates and the "level" no longer reflects actual sound.
+    long sum = 0;
+    for (int i = 0; i < samples; i++) sum += (tempBuf[i] >> 8);
+    int32_t mean = (int32_t)(sum / samples);
 
     int peak = 0;
-    int samples = bytes_read / 4;
     for (int i = 0; i < samples; i++) {
-        int m = applyGainClamp(tempBuf[i] >> 8);
-        if (m < 0) m = -m;
+        int32_t ac = (tempBuf[i] >> 8) - mean;
+        int32_t g = (int32_t)((float)ac * micGain / 256.0f);
+        if (g > 32767) g = 32767;
+        else if (g < -32768) g = -32768;
+        int m = g < 0 ? -(int)g : (int)g;
         if (m > peak) peak = m;
     }
     return peak;

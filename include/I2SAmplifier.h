@@ -68,6 +68,7 @@ public:
     void initialize() override;
     void setStreamingMode(bool enabled) override;
     void setVolume(float v) override;
+    void idleMute() override;
     void playUrl(const char* url) override;
     void playDingDong() override;
     void update() override;

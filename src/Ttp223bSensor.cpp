@@ -4,10 +4,18 @@
 Ttp223bSensor::Ttp223bSensor(int pin) : pin(pin) {}
 
 void Ttp223bSensor::initialize() {
-    // The TTP223B outputs HIGH when touched
-    pinMode(pin, INPUT);
+    // TTP223B drives HIGH when touched. Use a pulldown so a noisy/floating line
+    // rests LOW rather than picking up spurious highs (the sensor overpowers it).
+    pinMode(pin, INPUT_PULLDOWN);
 }
 
 bool Ttp223bSensor::isTouched() {
-    return digitalRead(pin) == HIGH;
+    bool raw = digitalRead(pin) == HIGH;
+    unsigned long now = millis();
+    if (raw != lastRaw) {          // level changed -> restart the stability timer
+        lastRaw = raw;
+        stableSince = now;
+    }
+    // Only report a touch once the pad has been HIGH steadily past the debounce.
+    return raw && (now - stableSince >= debounceMs);
 }

@@ -40,6 +40,7 @@ void VoiceAssistant::begin() {
     Serial.println(voice ? "System Ready. Say something (or tap)!"
                          : "System Ready. Tap to listen!");
     trigger.onEnterIdle();  // begin idle monitoring (voice) / noop (touch)
+    if (Config::Trigger::MODE == Config::TriggerMode::Voice) speaker.idleMute();
 }
 
 void VoiceAssistant::loop() {
@@ -57,6 +58,7 @@ void VoiceAssistant::goIdle() {
     display.showIdle();
     state = State::Idle;
     trigger.onEnterIdle();   // resume monitoring for the next start
+    if (Config::Trigger::MODE == Config::TriggerMode::Voice) speaker.idleMute();
 }
 
 void VoiceAssistant::handleIdle() {

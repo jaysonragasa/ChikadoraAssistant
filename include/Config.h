@@ -62,13 +62,18 @@ namespace Trigger {
 
     // Set true to print the live mic peak level to Serial while idle, so you can
     // watch your room's noise floor vs. speech and pick good thresholds below.
-    constexpr bool DEBUG_LEVEL = false;
+    constexpr bool DEBUG_LEVEL = true;
+
+    // Allow a tap to also start a conversation while in Voice mode. If the touch
+    // pad is electrically noisy and false-triggers, set this false to rely on
+    // sound only (touch still works when MODE == Touch).
+    constexpr bool TOUCH_FALLBACK = false;
 
     // --- Voice activation (sound onset). Levels are 16-bit peak amplitude
     //     (0..32767) after MIC_GAIN. Tune to your room/mic distance. ---
     // Start recording when input peak stays above this for START_MIN_MS.
-    constexpr int           START_THRESHOLD = 3000;
-    constexpr unsigned long START_MIN_MS    = 120;   // debounce (ignore short pops)
+    constexpr int           START_THRESHOLD = 4000;
+    constexpr unsigned long START_MIN_MS    = 500;   // debounce (ignore short pops)
 
     // --- End-of-speech (silence) detection while recording ---
     constexpr int           SILENCE_THRESHOLD = 1400; // below this counts as silence

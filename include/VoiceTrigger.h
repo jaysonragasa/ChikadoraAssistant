@@ -11,8 +11,9 @@
 class VoiceTrigger : public ITrigger {
 public:
     VoiceTrigger(IAudioInput& mic, ITouchSensor& touch, int threshold,
-                 unsigned long minMs, bool debug = false)
-        : mic(mic), touch(touch), threshold(threshold), minMs(minMs), debug(debug) {}
+                 unsigned long minMs, bool debug = false, bool touchFallback = true)
+        : mic(mic), touch(touch), threshold(threshold), minMs(minMs),
+          debug(debug), touchFallback(touchFallback) {}
 
     void begin() override { touch.initialize(); }
 
@@ -26,11 +27,16 @@ public:
     }
 
     bool triggered() override {
-        // Touch fallback (rising edge).
-        bool tNow = touch.isTouched();
-        bool tEdge = tNow && !wasTouched;
-        wasTouched = tNow;
-        if (tEdge) return true;
+        // Touch fallback (rising edge) - optional.
+        if (touchFallback) {
+            bool tNow = touch.isTouched();
+            bool tEdge = tNow && !wasTouched;
+            wasTouched = tNow;
+            if (tEdge) {
+                Serial.println("[VoiceTrigger] start: TOUCH");
+                return true;
+            }
+        }
 
         // Sound onset with a sustain debounce.
         int level = mic.readPeakLevel();
@@ -45,6 +51,7 @@ public:
             if (loudStartMs == 0) loudStartMs = now;
             if (now - loudStartMs >= minMs) {
                 loudStartMs = 0;
+                Serial.printf("[VoiceTrigger] start: SOUND level=%d\n", level);
                 return true;
             }
         } else {
@@ -59,6 +66,7 @@ private:
     int           threshold;
     unsigned long minMs;
     bool          debug;
+    bool          touchFallback;
     unsigned long loudStartMs = 0;
     unsigned long lastDebugMs = 0;
     bool          wasTouched = false;

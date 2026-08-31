@@ -19,4 +19,9 @@ public:
     // Output volume: 0.0 = silent, 1.0 = full scale (unchanged). Values above
     // 1.0 amplify and may clip. Scales samples in software before I2S.
     virtual void setVolume(float /*volume*/) {}
+
+    // Hold the amp's data line low so it outputs digital silence. Used while
+    // idle voice-monitoring keeps the shared I2S clock running, which would
+    // otherwise make the amp hiss static from a floating data pin.
+    virtual void idleMute() {}
 };

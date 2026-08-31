@@ -14,6 +14,18 @@ void I2SAmplifier::initialize() {
     // the single I2S_NUM_0 peripheral.
 }
 
+void I2SAmplifier::idleMute() {
+    // Not playing: release the I2S driver if somehow held, then drive DIN low so
+    // the MAX98357 (still clocked by the mic's I2S during idle monitoring) sees
+    // all-zero samples = silence instead of floating garbage = static.
+    if (i2sInstalled) {
+        i2s_driver_uninstall(I2S_NUM_0);
+        i2sInstalled = false;
+    }
+    pinMode(doutPin, OUTPUT);
+    digitalWrite(doutPin, LOW);
+}
+
 void I2SAmplifier::setStreamingMode(bool enabled) {
     streamMode = enabled;
     Serial.printf("[Audio] Playback mode: %s\n", enabled ? "STREAMING" : "BUFFERED");
