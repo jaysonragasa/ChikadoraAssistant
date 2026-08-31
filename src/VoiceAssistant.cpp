@@ -82,12 +82,14 @@ void VoiceAssistant::handleListening(bool touched) {
     Serial.printf("Free heap after releasing mic buffer: %u bytes\n", ESP.getFreeHeap());
 
     if (heard.length() == 0) {
-        Serial.println("No text heard; speaking a retry prompt.");
+        Serial.println("No text heard.");
         display.shakeEyes();                       // visual "huh?"
-        if (!queueReply(Config::Messages::NO_SPEECH)) {
-            goIdle();   // couldn't even queue TTS (server down) - just go idle
+        if (Config::Audio::SPEAK_ON_NO_SPEECH) {
+            // Speak a retry prompt; on success stay in Processing to play it.
+            if (queueReply(Config::Messages::NO_SPEECH)) return;
+            Serial.println("Couldn't queue the retry prompt.");
         }
-        // On success we stay in Processing and speak the prompt.
+        goIdle();   // disabled, or TTS couldn't be queued
         return;
     }
 

@@ -79,18 +79,21 @@ void I2SMicrophone::update() {
         return;
     }
 
-    size_t bytes_read;
+    // Drain the I2S DMA completely on each call. Reading only one small chunk
+    // per loop iteration (with the loop's ~10 ms delay) falls behind the 16 kHz
+    // capture rate, so the DMA overflows and drops samples - heard as pops and
+    // clicks. Keep reading until the DMA is empty so we always stay real-time.
     int32_t tempBuf[128];
-    // Read non-blocking
-    esp_err_t result = i2s_read(I2S_NUM_0, &tempBuf, sizeof(tempBuf), &bytes_read, 0);
-    
-    if (result == ESP_OK && bytes_read > 0) {
-        int samples = bytes_read / 4; 
-        for(int i = 0; i < samples; i++) {
+    while (audioBuffer.size() < bufferCap) {
+        size_t bytes_read = 0;
+        esp_err_t result = i2s_read(I2S_NUM_0, &tempBuf, sizeof(tempBuf), &bytes_read, 0);
+        if (result != ESP_OK || bytes_read == 0) break;   // nothing left to read
+
+        int samples = bytes_read / 4;
+        for (int i = 0; i < samples; i++) {
             // The INMP441 puts its 24-bit sample in the top bits of the 32-bit
             // slot. Extract the full 24-bit value (arithmetic shift keeps sign)
-            // so we keep resolution while applying gain - shifting down first
-            // and then amplifying is what made the audio grainy.
+            // so we keep resolution while applying gain.
             int32_t s24 = tempBuf[i] >> 8;   // signed, +/- 2^23
 
             // DC blocker (one-pole high-pass ~13 Hz): removes the mic's DC bias
@@ -101,21 +104,20 @@ void I2SMicrophone::update() {
             dcPrevOut = hp;
 
             // Apply gain at full resolution, then scale 24-bit -> 16-bit.
-            // micGain 1.0 == unity (24-bit full scale maps to 16-bit full scale).
             int32_t sample = (int32_t)(hp * micGain / 256.0f);
 
-            // Clamp to the int16 range so loud input distorts gracefully
-            // instead of wrapping around (which would sound like harsh noise).
+            // Clamp so loud input distorts gracefully instead of wrapping.
             if (sample > 32767) sample = 32767;
             else if (sample < -32768) sample = -32768;
             int16_t sample16 = (int16_t)sample;
-            
-            // Little-endian
-            audioBuffer.push_back(sample16 & 0xFF);
+
+            audioBuffer.push_back(sample16 & 0xFF);          // little-endian
             audioBuffer.push_back((sample16 >> 8) & 0xFF);
-            
             if (audioBuffer.size() >= bufferCap) break;
         }
+
+        // A short read means the DMA is drained for now.
+        if (bytes_read < sizeof(tempBuf)) break;
     }
 }
 

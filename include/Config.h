@@ -38,6 +38,10 @@ namespace Audio {
     // true  -> transcribed speech goes to the LLM (/api/chat) and the reply is spoken.
     // false -> the assistant just echoes what it heard.
     constexpr bool USE_LLM = true;
+
+    // When nothing is transcribed: true = speak Messages::NO_SPEECH aloud;
+    // false = stay silent (just the eye-shake).
+    constexpr bool SPEAK_ON_NO_SPEECH = false;
 }
 
 // Canned spoken replies for failure cases (change the wording / language here).
