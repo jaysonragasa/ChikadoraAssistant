@@ -15,5 +15,8 @@ if not exist "venv\Scripts\python.exe" (
 set TTS_HOST=0.0.0.0
 set TTS_PORT=8000
 
+REM Speech-to-text engine: "moonshine" (fast, short English) or "faster-whisper".
+set STT_ENGINE=moonshine
+
 "venv\Scripts\python.exe" backend\server.py
 endlocal

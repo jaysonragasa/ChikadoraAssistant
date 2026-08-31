@@ -117,6 +117,7 @@ def health():
         "status": "ok",
         "device": engines.DEVICE,
         "stt_available": stt.available(),
+        "stt_engine": stt.STT_ENGINE,
         "ollama_reachable": ollama.reachable(),
     }
 
