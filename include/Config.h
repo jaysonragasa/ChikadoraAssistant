@@ -56,7 +56,13 @@ namespace Playback {
 }
 
 namespace Trigger {
-    constexpr TriggerMode MODE = TriggerMode::Voice;  // Touch or Voice
+    // Touch = tap only. Voice = sound-activated AND tap (touch always works as
+    // a fallback in Voice mode). To go back to tap-only, set this to Touch.
+    constexpr TriggerMode MODE = TriggerMode::Voice;
+
+    // Set true to print the live mic peak level to Serial while idle, so you can
+    // watch your room's noise floor vs. speech and pick good thresholds below.
+    constexpr bool DEBUG_LEVEL = false;
 
     // --- Voice activation (sound onset). Levels are 16-bit peak amplitude
     //     (0..32767) after MIC_GAIN. Tune to your room/mic distance. ---

@@ -24,7 +24,8 @@ static LocalTtsClient  api(Config::Server::IP, Config::Server::PORT, Config::Ser
 static TouchTrigger    touchTrigger(touch);
 static VoiceTrigger    voiceTrigger(mic, touch,
                                     Config::Trigger::START_THRESHOLD,
-                                    Config::Trigger::START_MIN_MS);
+                                    Config::Trigger::START_MIN_MS,
+                                    Config::Trigger::DEBUG_LEVEL);
 static ITrigger&       trigger = (Config::Trigger::MODE == Config::TriggerMode::Voice)
                                      ? static_cast<ITrigger&>(voiceTrigger)
                                      : static_cast<ITrigger&>(touchTrigger);

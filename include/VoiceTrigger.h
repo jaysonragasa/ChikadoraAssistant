@@ -10,8 +10,9 @@
 // to any loud-enough sound, not a specific wake word.
 class VoiceTrigger : public ITrigger {
 public:
-    VoiceTrigger(IAudioInput& mic, ITouchSensor& touch, int threshold, unsigned long minMs)
-        : mic(mic), touch(touch), threshold(threshold), minMs(minMs) {}
+    VoiceTrigger(IAudioInput& mic, ITouchSensor& touch, int threshold,
+                 unsigned long minMs, bool debug = false)
+        : mic(mic), touch(touch), threshold(threshold), minMs(minMs), debug(debug) {}
 
     void begin() override { touch.initialize(); }
 
@@ -34,6 +35,12 @@ public:
         // Sound onset with a sustain debounce.
         int level = mic.readPeakLevel();
         unsigned long now = millis();
+
+        if (debug && now - lastDebugMs >= 400) {
+            lastDebugMs = now;
+            Serial.printf("[VoiceTrigger] level=%d (start>=%d)\n", level, threshold);
+        }
+
         if (level >= threshold) {
             if (loudStartMs == 0) loudStartMs = now;
             if (now - loudStartMs >= minMs) {
@@ -51,6 +58,8 @@ private:
     ITouchSensor& touch;
     int           threshold;
     unsigned long minMs;
+    bool          debug;
     unsigned long loudStartMs = 0;
+    unsigned long lastDebugMs = 0;
     bool          wasTouched = false;
 };
