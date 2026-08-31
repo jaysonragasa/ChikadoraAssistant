@@ -41,7 +41,7 @@ namespace Audio {
 }
 
 namespace Playback {
-    constexpr PlaybackMode MODE = PlaybackMode::Chunk;
+    constexpr PlaybackMode MODE = PlaybackMode::Stream;
 
     // Chunk mode: split the reply into clips of ~this many words; queue them all
     // up front so the server synthesizes the next while the current one plays.
@@ -51,13 +51,13 @@ namespace Playback {
 
 // GPIO wiring. The mic and amp share BCLK/LRC (single I2S peripheral).
 namespace Pins {
-    constexpr int OLED_SDA = 9;
-    constexpr int OLED_SCL = 8;
-    constexpr int TOUCH    = 10;
+    constexpr int OLED_SDA = 20;
+    constexpr int OLED_SCL = 21;
+    constexpr int TOUCH    = 5;
     constexpr int I2S_BCLK = 2;
     constexpr int I2S_LRC  = 3;
     constexpr int AMP_DIN  = 4;   // MAX98357 data in
-    constexpr int MIC_DOUT = 5;   // INMP441 data out
+    constexpr int MIC_DOUT = 10;   // INMP441 data out
 }
 
 } // namespace Config
