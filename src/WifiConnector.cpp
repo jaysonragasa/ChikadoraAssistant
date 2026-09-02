@@ -3,8 +3,8 @@
 
 namespace WifiConnector {
 
-void connect(const char* ssid, const char* pass) {
-    Serial.print("Connecting to WiFi");
+void begin(const char* ssid, const char* pass) {
+    Serial.println("Starting WiFi connection...");
 
     // Station mode, clear any stale config.
     WiFi.mode(WIFI_STA);
@@ -13,6 +13,8 @@ void connect(const char* ssid, const char* pass) {
 
     // Lower TX power to prevent voltage drops on the breadboard.
     WiFi.setTxPower(WIFI_POWER_8_5dBm);
+    // Keep retrying on its own if the link drops.
+    WiFi.setAutoReconnect(true);
 
     // Log nearby networks (handy for diagnosing a bad antenna / wrong SSID).
     Serial.println("\n--- WiFi Scan ---");
@@ -34,12 +36,22 @@ void connect(const char* ssid, const char* pass) {
         }
     });
 
+    WiFi.begin(ssid, pass);   // non-blocking; poll isConnected()
+}
+
+void retry(const char* ssid, const char* pass) {
+    Serial.println("\n[WiFi] Retrying connection...");
+    WiFi.disconnect();
+    delay(100);
     WiFi.begin(ssid, pass);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
+}
+
+bool isConnected() {
+    return WiFi.status() == WL_CONNECTED;
+}
+
+String ip() {
+    return WiFi.localIP().toString();
 }
 
 } // namespace WifiConnector

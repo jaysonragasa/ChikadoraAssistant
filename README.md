@@ -251,10 +251,18 @@ too big to fit in RAM it's skipped with a log line — lower `TTS_OUTPUT_RATE` o
 | `PLAYBACK_MODE` | `PLAYBACK_CHUNK` | `PLAYBACK_CHUNK` (chop + buffered play) or `PLAYBACK_STREAM` (stream one job) |
 | `WORDS_PER_CHUNK` | `10` | Clip size in chunk mode |
 
-The mic capture also runs a DC-blocking high-pass to keep speech sharp.
-Recording length is capped by the mic buffer (`maxBufferSize` in
-`include/I2SMicrophone.h`, 144000 bytes ≈ **4.5 s** at 16 kHz); tap again to stop
-early. It auto-shrinks if the heap is low.
+The mic capture also runs a DC-blocking high-pass to keep speech sharp, and
+drains the I2S DMA on every loop so it never falls behind the 16 kHz capture
+rate (which used to drop samples and cause pops). Recording length is capped by
+the mic buffer (`maxBufferSize` in `include/I2SMicrophone.h`, 144000 bytes ≈
+**4.5 s** at 16 kHz); tap again to stop early. It auto-shrinks if the heap is low.
+
+**Empty transcription behavior** — `Config::Audio::SPEAK_ON_NO_SPEECH` in
+[`include/Config.h`](include/Config.h) controls what happens when nothing is
+transcribed: `true` (default) shakes the eyes **and** speaks the
+`Messages::NO_SPEECH` retry prompt; `false` just shakes the eyes silently and
+returns to idle. Even when enabled, it falls back to a silent eye-shake if the
+TTS job can't be queued (e.g. the server is down).
 
 ### Server environment variables
 
@@ -294,6 +302,13 @@ too big for RAM. Lower `TTS_OUTPUT_RATE` (e.g. 12000) or `WORDS_PER_CHUNK`.
 clean multiplier over unity — if speech clips/distorts, lower it (toward 2); if
 too quiet, raise it (4–5). Use the **Received audio** card to listen back and
 tune. Speak within ~4.5 s per tap.
+
+**Popping / clicking in the recording while speaking.** Fixed — the mic capture
+now drains the I2S DMA fully on every `update()` call instead of reading a single
+128-sample chunk per loop iteration. Reading one small chunk per `~10 ms` loop
+fell behind the 16 kHz capture rate, so the DMA overflowed and dropped samples,
+heard as pops/clicks (worst during continuous sound, i.e. while talking). Make
+sure you're on a current build.
 
 **"Could not reach Ollama..."** Ollama isn't running or the URL is wrong. Start
 it (`ollama serve`) and confirm the **Ollama** card shows **connected**.

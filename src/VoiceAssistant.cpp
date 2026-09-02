@@ -16,10 +16,39 @@ void VoiceAssistant::begin() {
 
     // Display first, so there's visual feedback during the rest of bring-up.
     display.initialize();
-    display.showIdle();
 
-    WifiConnector::connect(Config::Wifi::SSID, Config::Wifi::PASS);
+    // 1) "Connecting to: <ssid>" with a spinner while the first attempt runs.
+    display.showConnecting(Config::Wifi::SSID);
+    WifiConnector::begin(Config::Wifi::SSID, Config::Wifi::PASS);
 
+    const unsigned long FIRST_ATTEMPT_MS = 20000;   // grace period before "sleeping"
+    unsigned long start = millis();
+    while (!WifiConnector::isConnected() && millis() - start < FIRST_ATTEMPT_MS) {
+        display.update();   // animate the connecting spinner
+        delay(50);
+    }
+
+    // 2) Still not up? Show sleeping eyes + corner spinner and keep retrying.
+    if (!WifiConnector::isConnected()) {
+        Serial.println("First attempt timed out; showing sleep screen and retrying...");
+        display.showSleeping();
+        unsigned long lastRetry = millis();
+        while (!WifiConnector::isConnected()) {
+            display.update();               // bob eyes + spin
+            if (millis() - lastRetry > 15000) {   // nudge a stalled retry
+                WifiConnector::retry(Config::Wifi::SSID, Config::Wifi::PASS);
+                lastRetry = millis();
+            }
+            delay(50);
+        }
+    }
+
+    // 3) Connected: show "Connected / IP Address: ..." for ~3s, then the face.
+    String ip = WifiConnector::ip();
+    Serial.println("WiFi Connected! IP: " + ip);
+    display.showConnected(ip.c_str());
+
+    // Bring up the rest of the hardware while the user reads the connected screen.
     touch.initialize();
 
     mic.initialize();
@@ -28,6 +57,9 @@ void VoiceAssistant::begin() {
     speaker.initialize();
     speaker.setStreamingMode(Config::Playback::MODE == Config::PlaybackMode::Stream);
     speaker.setVolume(Config::Audio::SPEAKER_VOLUME);
+
+    delay(3000);            // keep the connected screen up briefly
+    display.showIdle();     // now show the eyes
 
     Serial.println("System Ready. Tap to listen!");
 }

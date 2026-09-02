@@ -37,6 +37,27 @@ void OledFaceDisplay::drawFace(Expression expr, bool blinkClosed) {
     const int ox = gazeX;
     const int oy = gazeY;
 
+    // NOTE: draw the mouth FIRST, then the eyes on top. The smile is rendered
+    // as full circles with the top half erased by a black rectangle; that mask
+    // used to reach up into the eyes and bite black chunks out of their lower
+    // inner corners. Drawing the eyes last means they repaint over any part of
+    // the mask that overlaps them, while the smile arc (which sits low, y >= 52)
+    // is never touched by the eyes.
+
+    // ---------- Mouth (sits low, well clear of the eyes) ----------
+    if (expr == Expression::Thinking) {
+        // Small neutral line (concentrating).
+        display.fillRoundRect(54, 50, 20, 3, 1, WHITE);
+    } else {
+        // Smile for everything else (normal, listening, happy/speaking).
+        for (int i = 0; i < 4; i++) {
+            display.drawCircle(64, 51, 9 + i, WHITE);
+        }
+        display.fillRect(48, 38, 32, 14, BLACK);       // mask top half of arcs
+        display.fillCircle(53, 52, 2, WHITE);          // rounded smile corners
+        display.fillCircle(75, 52, 2, WHITE);
+    }
+
     // ---------- Eyes (kept in the upper half so the mouth has room) ----------
     if (eyesClosed) {
         // Thin bars = shut eyes (sending / blink).
@@ -61,21 +82,92 @@ void OledFaceDisplay::drawFace(Expression expr, bool blinkClosed) {
         display.fillRoundRect(EYE_R_CX - 15 + ox, 8 + oy, 30, 34, 8, WHITE);
     }
 
-    // ---------- Mouth (sits low, well clear of the eyes) ----------
-    if (expr == Expression::Thinking) {
-        // Small neutral line (concentrating).
-        display.fillRoundRect(54, 50, 20, 3, 1, WHITE);
-    } else {
-        // Smile for everything else (normal, listening, happy/speaking).
-        for (int i = 0; i < 4; i++) {
-            display.drawCircle(64, 51, 9 + i, WHITE);
-        }
-        display.fillRect(48, 38, 32, 14, BLACK);       // mask top half of arcs
-        display.fillCircle(53, 52, 2, WHITE);          // rounded smile corners
-        display.fillCircle(75, 52, 2, WHITE);
-    }
-
     display.display();
+}
+
+// ---------------------------------------------------------------------------
+// Boot / connectivity screens
+// ---------------------------------------------------------------------------
+
+// A small ring of dots with one bright "head" that rotates with `frame`,
+// giving a classic loading-spinner look on the mono OLED.
+void OledFaceDisplay::drawSpinner(int cx, int cy, int r, int frame) {
+    const int N = 8;
+    for (int i = 0; i < N; i++) {
+        float a = (float)i / N * 2.0f * PI;
+        int x = cx + (int)(cosf(a) * r);
+        int y = cy + (int)(sinf(a) * r);
+        if (i == (frame % N)) {
+            display.fillCircle(x, y, 2, WHITE);   // bright head
+        } else {
+            display.drawPixel(x, y, WHITE);       // faint trail dots
+        }
+    }
+}
+
+void OledFaceDisplay::drawConnecting() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 6);
+    display.print("Connecting to:");
+    display.setCursor(0, 20);
+    display.print(bootSsid);
+    drawSpinner(64, 50, 8, spinnerFrame);
+    display.display();
+}
+
+void OledFaceDisplay::drawConnected() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 10);
+    display.print("Connected");
+    display.setCursor(0, 32);
+    display.print("IP Address:");
+    display.setCursor(0, 46);
+    display.print(bootIp);
+    display.display();
+}
+
+void OledFaceDisplay::drawSleeping() {
+    // Closed eyes gently bob up and down (a slow ~0.6 Hz sine) while a spinner
+    // in the top-right corner shows we're still actively trying to connect.
+    int oy = (int)(3.0f * sinf(millis() / 300.0f));
+
+    display.clearDisplay();
+    // Thin bars = closed/sleeping eyes.
+    display.fillRoundRect(EYE_L_CX - 15, 30 + oy, 30, 5, 2, WHITE);
+    display.fillRoundRect(EYE_R_CX - 15, 30 + oy, 30, 5, 2, WHITE);
+    // "zZ" sleep cue above the right eye.
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(EYE_R_CX + 14, 18 + oy);
+    display.print("z");
+    // Corner spinner (still working on it).
+    drawSpinner(118, 10, 5, spinnerFrame);
+    display.display();
+}
+
+void OledFaceDisplay::showConnecting(const char* ssid) {
+    screen = Screen::Connecting;
+    bootSsid = ssid ? ssid : "";
+    spinnerFrame = 0;
+    nextSpinnerAt = millis();
+    drawConnecting();
+}
+
+void OledFaceDisplay::showConnected(const char* ip) {
+    screen = Screen::Connected;
+    bootIp = ip ? ip : "";
+    drawConnected();
+}
+
+void OledFaceDisplay::showSleeping() {
+    screen = Screen::Sleeping;
+    spinnerFrame = 0;
+    nextSpinnerAt = millis();
+    drawSleeping();
 }
 
 // Arm the next idle blink and gaze-shift at randomized intervals.
@@ -86,6 +178,7 @@ void OledFaceDisplay::scheduleIdleAnim() {
 }
 
 void OledFaceDisplay::showIdle() {
+    screen = Screen::Face;
     currentExpr = Expression::Normal;
     gazeX = 0;
     gazeY = 0;
@@ -94,6 +187,7 @@ void OledFaceDisplay::showIdle() {
 }
 
 void OledFaceDisplay::showListening() {
+    screen = Screen::Face;
     currentExpr = Expression::Listening;
     gazeX = 0;  // eyes centered while engaged
     gazeY = 0;
@@ -101,6 +195,7 @@ void OledFaceDisplay::showListening() {
 }
 
 void OledFaceDisplay::showThinking() {
+    screen = Screen::Face;
     currentExpr = Expression::Thinking;   // eyes stay shut while sending
     gazeX = 0;
     gazeY = 0;
@@ -108,6 +203,7 @@ void OledFaceDisplay::showThinking() {
 }
 
 void OledFaceDisplay::showSpeaking() {
+    screen = Screen::Face;
     currentExpr = Expression::Happy;
     gazeX = 0;
     gazeY = 0;
@@ -137,6 +233,23 @@ void OledFaceDisplay::shakeEyes() {
 
 void OledFaceDisplay::update() {
     unsigned long now = millis();
+
+    // Boot screens animate independently of the face.
+    if (screen == Screen::Connecting) {
+        if (now >= nextSpinnerAt) {
+            spinnerFrame++;
+            nextSpinnerAt = now + 100;
+            drawConnecting();
+        }
+        return;
+    }
+    if (screen == Screen::Sleeping) {
+        // Redraw every ~50 ms so the eyes bob smoothly; advance spinner slower.
+        if (now >= nextSpinnerAt) { spinnerFrame++; nextSpinnerAt = now + 100; }
+        drawSleeping();
+        return;
+    }
+    if (screen == Screen::Connected) return;   // static screen
 
     // Finish an in-progress blink (any expression).
     if (isBlinking) {
