@@ -7,6 +7,16 @@
 // All tunables live here so the rest of the firmware stays free of magic
 // numbers and credentials. Values are compile-time constants, so the compiler
 // folds them just like the old #defines did.
+//
+// Two kinds of settings live here:
+//   * BOOTSTRAP (Wifi, Server::IP/PORT, Pins) - the device needs these before
+//     it can reach the server, or they're physical wiring, so they can only be
+//     changed by reflashing.
+//   * DEFAULTS for the web-configurable runtime settings (Server::VOICE_ID,
+//     Audio::*, Playback::MODE/WORDS_PER_CHUNK). These are fetched from
+//     GET /api/device/settings at boot (see RuntimeSettings) and can be changed
+//     from the web UI without reflashing; the values here are just the fallback
+//     used when that fetch fails.
 // -----------------------------------------------------------------------------
 namespace Config {
 
@@ -17,13 +27,24 @@ enum class PlaybackMode {
 };
 
 namespace Wifi {
-    constexpr const char* SSID = "Anikanik2G";
-    constexpr const char* PASS = "QazWsx12345";
+    constexpr const char* SSID = "corp-wifi";
+    constexpr const char* PASS = "1nf1ni8m@InF0r";
+}
+
+// BOOTSTRAP: over-the-air update settings. HOSTNAME is how the device appears
+// to the OTA uploader; set PASSWORD to require auth (empty = anyone on the LAN
+// can flash it).
+namespace Ota {
+    constexpr const char* HOSTNAME = "chikadora";
+    constexpr const char* PASSWORD = "";
 }
 
 namespace Server {
+    // BOOTSTRAP: where to reach the local server. Can't be web-configured -
+    // the device needs the address to fetch settings in the first place.
     constexpr const char* IP       = "192.168.1.60";  // PC running the local server
     constexpr uint16_t    PORT     = 8000;
+    // DEFAULT: web-overridable (device settings "voice_id").
     constexpr const char* VOICE_ID = "af_sarah";      // Kokoro voice
 }
 
@@ -59,6 +80,30 @@ namespace Playback {
     // up front so the server synthesizes the next while the current one plays.
     constexpr int WORDS_PER_CHUNK = 10;
     constexpr int MAX_CLIPS       = 24;  // upper bound on clips per reply
+}
+
+// Face/eye geometry defaults (web-overridable, with live preview). The face is
+// drawn on a 128x64 OLED; eyes are centered horizontally around x=64.
+namespace Eyes {
+    constexpr int  WIDTH     = 30;   // eye width in px
+    constexpr int  HEIGHT    = 34;   // eye height in px (normal/idle)
+    constexpr int  GAP       = 27;   // distance from screen center to each eye center
+    constexpr int  ROUNDNESS = 8;    // rounded-rect corner radius
+    constexpr bool SHOW_MOUTH = true;
+}
+
+// Weather feature defaults (web-overridable). Uses Open-Meteo (no API key).
+namespace Weather {
+    constexpr bool  ENABLED      = true;
+    constexpr float LAT          = 14.5995f;   // Manila (change on the config page)
+    constexpr float LON          = 120.9842f;
+    constexpr int   POLL_MINUTES = 30;         // how often to refresh the forecast
+}
+
+// Small top-left status overlays (drawn behind the eyes), web-overridable.
+namespace Overlay {
+    constexpr bool SHOW_LOOPTIME = false;   // main-loop frequency (Hz)
+    constexpr bool SHOW_FREEMEM  = false;   // free heap (KB)
 }
 
 // GPIO wiring. The mic and amp share BCLK/LRC (single I2S peripheral).
