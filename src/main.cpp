@@ -6,6 +6,7 @@
 #include "I2SMicrophone.h"
 #include "I2SAmplifier.h"
 #include "LocalTtsClient.h"
+#include "OpenMeteoClient.h"
 #include "VoiceAssistant.h"
 
 // Composition root: build the concrete devices and inject them into the app.
@@ -16,8 +17,9 @@ static Ttp223bSensor   touch(Config::Pins::TOUCH);
 static I2SMicrophone   mic(Config::Pins::I2S_BCLK, Config::Pins::I2S_LRC, Config::Pins::MIC_DOUT);
 static I2SAmplifier    speaker(Config::Pins::I2S_BCLK, Config::Pins::I2S_LRC, Config::Pins::AMP_DIN);
 static LocalTtsClient  api(Config::Server::IP, Config::Server::PORT, Config::Server::VOICE_ID);
+static OpenMeteoClient weather;
 
-static VoiceAssistant  assistant(display, touch, mic, speaker, api);
+static VoiceAssistant  assistant(display, touch, mic, speaker, api, weather);
 
 void setup() {
     assistant.begin();

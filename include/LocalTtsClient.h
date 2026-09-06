@@ -17,4 +17,7 @@ public:
     String submitTtsJob(String text) override;
     int isTtsJobDone(String jobId) override;
     String getAudioUrl(String jobId) override;
+    void setServer(const String& ip, uint16_t port) override;
+    bool ping() override;
+    void setVoiceId(const String& voice) override;
 };

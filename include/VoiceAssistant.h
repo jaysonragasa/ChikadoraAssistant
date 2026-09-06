@@ -6,7 +6,12 @@
 #include "IAudioInput.h"
 #include "IAudioOutput.h"
 #include "IApiClient.h"
+#include "IWeatherProvider.h"
+#include "WeatherData.h"
 #include "Config.h"
+#include "RuntimeSettings.h"
+#include "WebConfigServer.h"
+#include "TapDetector.h"
 
 // Orchestrates the assistant: tap -> record -> transcribe -> chat -> synthesize
 // -> play. Depends only on the abstractions (interfaces), which are injected via
@@ -18,7 +23,8 @@ public:
                    ITouchSensor& touch,
                    IAudioInput& mic,
                    IAudioOutput& speaker,
-                   IApiClient& api);
+                   IApiClient& api,
+                   IWeatherProvider& weather);
 
     void begin();   // one-time bring-up (call from setup())
     void loop();    // run the state machine (call from loop())
@@ -26,17 +32,41 @@ public:
 private:
     enum class State { Idle, Listening, Processing, Speaking };
 
+    // Which page the display is showing. 1 tap speaks; 2 taps switch page.
+    enum class Page { Eyes, Weather };
+
     // Injected collaborators.
-    IDisplay&     display;
-    ITouchSensor& touch;
-    IAudioInput&  mic;
-    IAudioOutput& speaker;
-    IApiClient&   api;
+    IDisplay&         display;
+    ITouchSensor&     touch;
+    IAudioInput&      mic;
+    IAudioOutput&     speaker;
+    IApiClient&       api;
+    IWeatherProvider& weather;
+
+    // Web-configurable settings, seeded from Config defaults and refreshed from
+    // the server at boot (see begin()).
+    RuntimeSettings settings;
+
+    // Device-hosted config page (set the TTS server IP/port from a browser).
+    WebConfigServer webConfig;
+
+    // Touch paging: turns raw touches into single/double taps and tracks page.
+    TapDetector tapDetector;
+    Page        page = Page::Eyes;
 
     // Runtime state.
     State  state = State::Idle;
     bool   wasTouched = false;
     String currentJobId;
+
+    // Main-loop frequency + free-heap sampling for the top-left overlays.
+    unsigned long loopCount = 0;
+    unsigned long lastMetricAt = 0;
+
+    // Weather polling.
+    WeatherData   weatherData;
+    unsigned long lastWeatherPollAt = 0;
+    bool          weatherPolled = false;
 
     // Chunked-playback queue: a TTS job id per clip, plus which one we're on.
     String clipJobIds[Config::Playback::MAX_CLIPS];
@@ -44,10 +74,15 @@ private:
     int    clipIndex = 0;
 
     // State handlers.
-    void handleIdle(bool touched);
+    void handleIdle(bool touched, unsigned long now);
     void handleListening(bool touched);
     void handleProcessing();
     void handleSpeaking();
+
+    // Paging + speak helpers.
+    void startListening();   // begin the tap->record->...->speak flow
+    void togglePage();       // switch between the Eyes and Weather pages
+    void pollWeatherIfDue(unsigned long now);   // refresh the forecast periodically
 
     // Helpers.
     String think(const String& heard);        // LLM reply or echo/fallback

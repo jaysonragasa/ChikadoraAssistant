@@ -27,6 +27,13 @@ Flow at speak time: **tap → record → transcribe (Whisper) → chat (Ollama) 
 synthesize (Kokoro) → play**. Long replies are chopped into short clips that are
 synthesized and played back to back, so playback stays smooth on the tiny MCU.
 
+**Controls & pages.** The touch pad drives two gestures: **one tap = talk**,
+**two taps = switch page**. There are two pages — an animated **face** (eyes +
+mouth) and a **weather** page (current conditions + a short hourly forecast from
+[Open-Meteo](https://open-meteo.com/), with animated icons). Almost everything is
+configurable from a small **web page the device hosts itself** (see
+[Device configuration](#device-configuration)) — no reflashing.
+
 ---
 
 ## 1. Hardware
@@ -49,15 +56,18 @@ The mic and amplifier **share** the I2S clock lines (`BCLK`/`LRC`) because the
 C3 has a single I2S peripheral; the firmware installs/uninstalls the I2S driver
 as it switches between recording and playback.
 
+Pin assignments are defined in [`include/Config.h`](include/Config.h)
+(`Config::Pins`):
+
 | ESP32-C3 GPIO | Connects to | Notes |
 |---|---|---|
 | GPIO2 | INMP441 `SCK` **and** MAX98357 `BCLK` | shared I2S bit clock |
 | GPIO3 | INMP441 `WS` **and** MAX98357 `LRC` | shared I2S word select |
 | GPIO4 | MAX98357 `DIN` | I2S data out (to amp) |
-| GPIO5 | INMP441 `SD` | I2S data in (from mic) |
-| GPIO8 | SSD1306 `SCL` | I2C clock |
-| GPIO9 | SSD1306 `SDA` | I2C data |
-| GPIO10 | TTP223B `I/O` | touch signal |
+| GPIO10 | INMP441 `SD` | I2S data in (from mic) |
+| GPIO20 | SSD1306 `SDA` | I2C data |
+| GPIO21 | SSD1306 `SCL` | I2C clock |
+| GPIO5 | TTP223B `I/O` | touch signal |
 | 3V3 | VDD/VCC of all modules | |
 | 5V (or 3V3) | MAX98357 `VIN` | 5V is louder |
 | GND | GND of all modules | common ground |
@@ -152,22 +162,27 @@ run.cmd
 
 ## 5. Configure and flash the firmware
 
-Edit the config block near the top of [`src/main.cpp`](src/main.cpp):
+All settings live in [`include/Config.h`](include/Config.h) as namespaced
+`constexpr` defaults. You only **need** to edit the Wi-Fi credentials before the
+first flash — everything else can be changed later from the device's own web
+page (see [Device configuration](#device-configuration)).
 
 ```cpp
-#define WIFI_SSID     "your-wifi-name"
-#define WIFI_PASS     "your-wifi-password"
-
-#define SERVER_IP     "192.168.1.60"   // <-- your PC's LAN IP from step 3
-#define SERVER_PORT   8000
-#define VOICE_ID      "af_sarah"        // any Kokoro voice
-
-#define MIC_GAIN      3.0f              // mic gain over unity (~2-5 typical)
-#define USE_LLM       1                 // 1 = Ollama reply, 0 = echo what you said
-
-#define PLAYBACK_MODE PLAYBACK_CHUNK    // PLAYBACK_CHUNK or PLAYBACK_STREAM
-#define WORDS_PER_CHUNK 10              // clip size in chunk mode
+namespace Wifi {
+    constexpr const char* SSID = "your-wifi-name";
+    constexpr const char* PASS = "your-wifi-password";
+}
+namespace Server {
+    constexpr const char* IP = "192.168.1.60";   // your PC's LAN IP (first-run default)
+    constexpr uint16_t    PORT = 8000;
+}
 ```
+
+> **Config.h vs the web page.** `Config.h` holds the *first-run defaults*. On
+> first boot the device seeds its NVS (flash) storage from these; after that the
+> values saved from the web page win. Wi-Fi and pins are **bootstrap/hardware**
+> settings and stay compile-time — the device needs Wi-Fi before it can serve
+> its config page.
 
 Build and flash (from the project root, with the device plugged in):
 
@@ -211,8 +226,53 @@ Next clip 2/2 (job c3d4...)
 All clips played.
 ```
 
-Set `USE_LLM 0` to bypass the LLM and just echo your speech (handy for testing
-the mic/speaker path).
+Turn **Send speech to the LLM** off on the config page to bypass the LLM and just
+echo your speech (handy for testing the mic/speaker path).
+
+---
+
+## Controls
+
+The single touch pad is gesture-based:
+
+- **One tap → talk.** Records, transcribes, asks the LLM, and speaks the reply.
+- **Two taps → switch page.** Toggles between the **face** and **weather** pages.
+
+(Single vs double tap is disambiguated by a ~400 ms window, so a single tap acts
+a beat after you lift your finger.) While recording, tap again to stop early;
+it also stops automatically when the mic buffer fills (~4.5 s).
+
+---
+
+## Device configuration
+
+Chikadora hosts its own config page — no reflashing, and it works even if the
+TTS server is down. After it joins Wi-Fi, the OLED shows its IP (e.g.
+`192.168.1.42`); open `http://<device-ip>/` from any browser on the same network.
+Settings are stored in the device's NVS (flash); **most changes take effect
+after a restart** (there's a "Restart now" button), except the eye sliders which
+preview **live** on the screen as you drag.
+
+| Section | Setting | Notes |
+|---|---|---|
+| **TTS / LLM server** | IP, Port | Where the device reaches the local server. Fixes a DHCP change without reflashing. |
+| **Audio** | Voice | Any Kokoro voice id (e.g. `af_sarah`, `am_adam`). |
+| | Mic gain | Clean multiplier over unity (~2–5). |
+| | Speaker volume | 0 = silent, 1 = unity, >1 amplifies. |
+| | Send speech to the LLM | Off = echo what you said. |
+| | Speak a retry prompt when nothing is heard | Off = silent eye-shake only. |
+| **Playback** | Mode | Stream (whole reply) or Chunk (split into clips). |
+| | Words per chunk | Clip size in chunk mode. |
+| **Face / Eyes** | Width, Distance, Height, Roundness | Sliders; **live preview** on the OLED. |
+| | Show mouth | Toggle the smile. |
+| **Overlays** | Show loop time / Show free memory | Small text in the top-left, drawn *behind* the eyes. |
+| **Weather** | Enable, Latitude, Longitude, Refresh (min) | Powered by [Open-Meteo](https://open-meteo.com/). Set your coordinates. |
+
+The device polls Open-Meteo every *Refresh* minutes (in the background while
+idle) and shows current conditions plus a short hourly forecast on the weather
+page, with animated icons (sun, clouds, rain, snow, storm, fog). If the TTS
+server can't be reached at boot, a small **`!TTS`** badge shows on the face and
+the device runs on its stored defaults.
 
 ---
 
@@ -238,18 +298,27 @@ too big to fit in RAM it's skipped with a log line — lower `TTS_OUTPUT_RATE` o
 
 ## Configuration reference
 
-### Firmware (`src/main.cpp`)
+### Firmware ([`include/Config.h`](include/Config.h) defaults)
 
-| Define | Default | Purpose |
-|---|---|---|
-| `WIFI_SSID` / `WIFI_PASS` | — | Wi-Fi credentials |
-| `SERVER_IP` | `192.168.1.60` | LAN IP of the PC running the server |
-| `SERVER_PORT` | `8000` | Server port |
-| `VOICE_ID` | `af_sarah` | Kokoro voice |
-| `MIC_GAIN` | `3.0f` | Mic gain as a clean multiplier over unity (1.0 = unity). Raise if too quiet, lower if it clips. ~2–5 typical |
-| `USE_LLM` | `1` | `1` = Ollama reply, `0` = echo |
-| `PLAYBACK_MODE` | `PLAYBACK_CHUNK` | `PLAYBACK_CHUNK` (chop + buffered play) or `PLAYBACK_STREAM` (stream one job) |
-| `WORDS_PER_CHUNK` | `10` | Clip size in chunk mode |
+These are the compile-time **first-run defaults**; the live values are stored in
+NVS and edited from the [device config page](#device-configuration). Wi-Fi and
+`Pins` are bootstrap/hardware and can only change by reflashing.
+
+| Namespace | Setting | Default | Web-editable? |
+|---|---|---|---|
+| `Wifi` | `SSID` / `PASS` | — | no (bootstrap) |
+| `Server` | `IP` / `PORT` | `192.168.1.60` / `8000` | **yes** |
+| `Server` | `VOICE_ID` | `af_sarah` | **yes** |
+| `Audio` | `MIC_GAIN` | `3.0` | **yes** |
+| `Audio` | `SPEAKER_VOLUME` | `3.0` | **yes** |
+| `Audio` | `USE_LLM` | `true` | **yes** |
+| `Audio` | `SPEAK_ON_NO_SPEECH` | `false` | **yes** |
+| `Playback` | `MODE` | `Stream` | **yes** |
+| `Playback` | `WORDS_PER_CHUNK` | `10` | **yes** |
+| `Eyes` | `WIDTH`/`HEIGHT`/`GAP`/`ROUNDNESS`/`SHOW_MOUTH` | `30`/`34`/`27`/`8`/`true` | **yes** (live) |
+| `Weather` | `ENABLED`/`LAT`/`LON`/`POLL_MINUTES` | `true`/`14.5995`/`120.9842`/`30` | **yes** |
+| `Overlay` | `SHOW_LOOPTIME`/`SHOW_FREEMEM` | `false`/`false` | **yes** |
+| `Pins` | I2S/I2C/touch GPIOs | see table above | no (hardware) |
 
 The mic capture also runs a DC-blocking high-pass to keep speech sharp, and
 drains the I2S DMA on every loop so it never falls behind the 16 kHz capture
@@ -257,12 +326,12 @@ rate (which used to drop samples and cause pops). Recording length is capped by
 the mic buffer (`maxBufferSize` in `include/I2SMicrophone.h`, 144000 bytes ≈
 **4.5 s** at 16 kHz); tap again to stop early. It auto-shrinks if the heap is low.
 
-**Empty transcription behavior** — `Config::Audio::SPEAK_ON_NO_SPEECH` in
-[`include/Config.h`](include/Config.h) controls what happens when nothing is
-transcribed: `true` (default) shakes the eyes **and** speaks the
-`Messages::NO_SPEECH` retry prompt; `false` just shakes the eyes silently and
-returns to idle. Even when enabled, it falls back to a silent eye-shake if the
-TTS job can't be queued (e.g. the server is down).
+**Empty transcription behavior** — the **Speak a retry prompt** setting (device
+config page; `Config::Audio::SPEAK_ON_NO_SPEECH` default) controls what happens
+when nothing is transcribed: on = shake the eyes **and** speak the
+`Messages::NO_SPEECH` retry prompt; off = just shake the eyes and return to idle.
+Even when on, it falls back to a silent eye-shake if the TTS job can't be queued
+(e.g. the server is down).
 
 ### Server environment variables
 
@@ -282,7 +351,9 @@ TTS job can't be queued (e.g. the server is down).
 | `SAVE_RECORDINGS` | `1` | Keep the last 20 clips the device sent (playable in the web UI's "Received audio" card); set `0` to disable |
 
 Ollama host/model/system-prompt are also editable in the web UI and saved to
-`webserver/backend/settings.json` (gitignored).
+`webserver/backend/settings.json` (gitignored). Device-side settings (voice,
+audio, eyes, weather, overlays, server IP/port) live on the **device's** config
+page, not the server — so the server UI only covers TTS generation and Ollama.
 
 ---
 
@@ -316,9 +387,12 @@ it (`ollama serve`) and confirm the **Ollama** card shows **connected**.
 **"Ollama model '…' isn't installed."** Run `ollama pull <model>`, then pick it
 via **List** in the UI and **Save**.
 
-**Nothing happens / can't reach the server.** Verify `SERVER_IP` matches the
-PC's current LAN IP (`ipconfig`), the server is running (`run.cmd`), and the PC
-firewall allows inbound connections on port 8000.
+**Nothing happens / can't reach the server / `!TTS` badge on the face.** The
+device couldn't reach the TTS server. Open the device config page
+(`http://<device-ip>/`, IP shown on boot) and check the **Server IP/Port** match
+the PC's current LAN IP (`ipconfig`); confirm the server is running (`run.cmd`)
+and the PC firewall allows inbound connections on port 8000. Restart the device
+after saving.
 
 **Serial monitor shows nothing.** Baud is `115200`; the C3 Supermini needs USB
 CDC (already enabled via `build_flags` in `platformio.ini`).
@@ -331,13 +405,26 @@ CDC (already enabled via `build_flags` in `platformio.ini`).
 ChikadoraAssistant/
 ├─ platformio.ini            PlatformIO config (board, libs, USB CDC)
 ├─ upload.cmd / uploadmon.cmd  build + flash helpers
-├─ include/                  interfaces + hardware wrappers (mic, amp, display, touch, API client)
-├─ src/                      main.cpp (state machine + config) + implementations
+├─ include/                  interfaces + implementations' headers
+│  ├─ Config.h               compile-time first-run defaults (wifi, server, audio, eyes, weather, pins)
+│  ├─ RuntimeSettings.h      mutable settings struct (seeded from Config, loaded from NVS)
+│  ├─ DeviceConfig.h         NVS-backed persistent config (server addr + all runtime settings)
+│  ├─ IDisplay/IAudio*/IApiClient/ITouchSensor/IWeatherProvider   abstractions (DIP)
+│  ├─ OledFaceDisplay.h      face + boot screens + weather page + overlays
+│  ├─ WebConfigServer.h      device-hosted config page (port 80)
+│  ├─ TapDetector.h          single/double-tap gesture detection
+│  ├─ WeatherData.h / OpenMeteoClient.h   weather model + Open-Meteo client
+│  └─ VoiceAssistant.h       state machine + paging + weather poll (composition target)
+├─ src/                      main.cpp (composition root) + implementations
 └─ webserver/                local TTS/STT/LLM server (see webserver/README.md)
    ├─ backend/               FastAPI app: Kokoro TTS, Whisper STT, Ollama chat
    ├─ frontend/              web UI (generate, Ollama settings, received audio, queue)
    └─ run.cmd                start the server on 0.0.0.0:8000
 ```
+
+The firmware follows a SOLID layout: `main.cpp` is a thin composition root that
+builds the concrete devices (OLED, mic, amp, touch, TTS client, weather client)
+and injects them into `VoiceAssistant`, which depends only on the interfaces.
 
 ---
 

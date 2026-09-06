@@ -228,3 +228,25 @@ int LocalTtsClient::isTtsJobDone(String jobId) {
 String LocalTtsClient::getAudioUrl(String jobId) {
     return baseUrl + "/api/jobs/" + jobId + "/result";
 }
+
+void LocalTtsClient::setServer(const String& ip, uint16_t port) {
+    serverIp = ip;
+    serverPort = port;
+    baseUrl = "http://" + serverIp + ":" + String(serverPort);
+    Serial.println("[API] Server set to " + baseUrl);
+}
+
+bool LocalTtsClient::ping() {
+    if (WiFi.status() != WL_CONNECTED) return false;
+    HTTPClient http;
+    http.begin(baseUrl + "/api/health");
+    http.setConnectTimeout(1500);   // fail fast so the boot spinner stays lively
+    http.setTimeout(1500);
+    int code = http.GET();
+    http.end();
+    return code == 200;
+}
+
+void LocalTtsClient::setVoiceId(const String& voice) {
+    if (voice.length() > 0) voiceId = voice;
+}
