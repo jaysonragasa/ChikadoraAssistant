@@ -47,6 +47,8 @@ import settings
 import ollama
 import re
 import time
+import threading
+from contextlib import asynccontextmanager
 
 # Single background worker renders queued jobs one at a time.
 job_queue = JobQueue(synth_fn=lambda mid, params: registry.synthesize(mid, params))
@@ -62,7 +64,72 @@ SAVE_RECORDINGS = os.environ.get("SAVE_RECORDINGS", "1") not in ("0", "false", "
 MAX_RECORDINGS = 20
 _REC_RE = re.compile(r"^rec-\d+\.wav$")
 
-app = FastAPI(title="Kokoro TTS", version="1.0.0")
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def _warm_models_worker() -> None:
+    """Preload STT + Kokoro at startup with clear, bracketed logs so the console
+    plainly shows what's initializing. Runs in a daemon thread."""
+    bar = "=" * 60
+
+    # ---- STT ----
+    engine = stt.STT_ENGINE
+    _log("\n" + bar)
+    _log(f"  Initializing STT: {engine}")
+    _log(bar)
+    try:
+        if stt.available():
+            stt._load()
+            _log(f"\n  Done initializing STT: {engine}\n")
+        else:
+            _log(f"\n  [skip] STT package for '{engine}' isn't installed.\n")
+    except Exception as e:  # noqa: BLE001
+        _log(f"\n  [error] STT init failed: {e}\n")
+
+    # ---- Kokoro TTS ----
+    _log(bar)
+    _log("  Initializing Kokoro TTS")
+    _log(bar)
+    try:
+        k = next((m for m in registry.list_models() if m["id"] == "kokoro-82m"), None)
+        if k and k.get("ready"):
+            job = job_queue.submit(
+                "kokoro-82m",
+                {"text": "Ready.", "language": "a", "voice": "af_sarah", "speed": 1.0},
+                "warm-up",
+            )
+            jid = job["id"]
+            for _ in range(240):   # up to ~120 s for the first model load
+                j = job_queue.get(jid)
+                if not j or j["state"] in ("done", "error", "canceled"):
+                    break
+                time.sleep(0.5)
+            try:
+                job_queue.remove(jid)   # keep the warm-up out of the queue UI
+            except Exception:
+                pass
+            _log("\n  Done initializing Kokoro TTS\n")
+        else:
+            _log("\n  [skip] Kokoro not downloaded yet - use the Download button once.\n")
+    except Exception as e:  # noqa: BLE001
+        _log(f"\n  [error] Kokoro init failed: {e}\n")
+
+    host = os.environ.get("TTS_HOST", "127.0.0.1")
+    port = os.environ.get("TTS_PORT", "8000")
+    _log(bar)
+    _log(f"  Ready. Listening on http://{host}:{port}")
+    _log(bar + "\n")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # Warm the models in the background so startup isn't blocked.
+    threading.Thread(target=_warm_models_worker, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Kokoro TTS", version="1.0.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -147,6 +214,35 @@ def update_settings(
         updates["ollama_system_prompt"] = ollama_system_prompt.strip()
     settings.save(updates)
     return get_settings()
+
+
+@app.get("/api/personality")
+def get_personality():
+    """TARS-style behavior settings (humor/honesty/sarcasm), applied to chat."""
+    return settings.get_personality()
+
+
+@app.post("/api/personality")
+def update_personality(
+    tars_enabled: str = Form(""),
+    tars_humor: str = Form(""),
+    tars_honesty: str = Form(""),
+    tars_sarcasm: str = Form(""),
+    tars_discretion: str = Form(""),
+):
+    """Persist personality settings. Takes effect on the next chat (no restart)."""
+    updates = {}
+    if tars_enabled != "":
+        updates["tars_enabled"] = tars_enabled
+    if tars_humor.strip() != "":
+        updates["tars_humor"] = tars_humor
+    if tars_honesty.strip() != "":
+        updates["tars_honesty"] = tars_honesty
+    if tars_sarcasm.strip() != "":
+        updates["tars_sarcasm"] = tars_sarcasm
+    if tars_discretion.strip() != "":
+        updates["tars_discretion"] = tars_discretion
+    return settings.save_personality(updates)
 
 
 @app.post("/api/chat")

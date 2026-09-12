@@ -245,9 +245,27 @@ String VoiceAssistant::weatherSummary() {
 
 void VoiceAssistant::speakWeather() {
     if (state != State::Idle || !weatherData.valid) return;   // don't interrupt
+
     String summary = weatherSummary();
-    Serial.println("[Weather] Speaking: " + summary);
-    if (queueReply(summary)) {
+    String toSpeak = summary;
+
+    // Ask the LLM for a personality-flavored take + suggestion (the server's
+    // /api/chat injects the TARS personality settings). Falls back to just the
+    // factual forecast if the LLM is off or unreachable.
+    if (settings.useLlm) {
+        String prompt = "Here is today's weather. " + summary +
+                        " In one or two short sentences, give your take on this "
+                        "weather and suggest what I should do today.";
+        Serial.println("[Weather] Asking the LLM for a take...");
+        String take = api.chat(prompt);
+        if (take.length() > 0) {
+            Serial.println("[Weather] LLM: " + take);
+            toSpeak += " " + take;
+        }
+    }
+
+    Serial.println("[Weather] Speaking: " + toSpeak);
+    if (queueReply(toSpeak)) {
         speakingWeather = true;
         state = State::Processing;   // the poller plays the clips
     }

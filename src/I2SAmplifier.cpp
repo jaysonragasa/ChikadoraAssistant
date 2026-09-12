@@ -394,15 +394,15 @@ void I2SAmplifier::playDingDong() {
     float amplitude = 16000.0 * volume; // half of max 16-bit range, scaled by volume
     size_t bytes_written;
 
-    int samples1 = (sample_rate * 100) / 1000; // "Ding" 800 Hz 100 ms
+    int samples1 = (sample_rate * 180) / 1000; // "Ding" 800 Hz 100 ms
     for (int i = 0; i < samples1; i++) {
-        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 800 * i / sample_rate));
+        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 523 * i / sample_rate));
         int32_t sample32 = ((uint16_t)sample << 16) | (uint16_t)sample;
         i2s_write(I2S_NUM_0, &sample32, sizeof(sample32), &bytes_written, portMAX_DELAY);
     }
-    int samples2 = (sample_rate * 150) / 1000; // "Dong" 1000 Hz 150 ms
+    int samples2 = (sample_rate * 260) / 1000; // "Dong" 1000 Hz 150 ms
     for (int i = 0; i < samples2; i++) {
-        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 1000 * i / sample_rate));
+        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 784 * i / sample_rate));
         int32_t sample32 = ((uint16_t)sample << 16) | (uint16_t)sample;
         i2s_write(I2S_NUM_0, &sample32, sizeof(sample32), &bytes_written, portMAX_DELAY);
     }

@@ -30,6 +30,27 @@ def reset_history() -> None:
         _history.clear()
 
 
+def _personality_prompt() -> str:
+    """A TARS-style behavior directive built from the current personality
+    settings. Appended to the system prompt so changes take effect on the very
+    next chat (no restart)."""
+    p = settings.get_personality()
+    if not p.get("tars_enabled"):
+        return ""
+    return (
+        " You are modeled after TARS, the robot from Interstellar. Your behavior "
+        f"is tuned by these settings: humor {p['tars_humor']}%, honesty "
+        f"{p['tars_honesty']}%, sarcasm {p['tars_sarcasm']}%, discretion "
+        f"{p['tars_discretion']}%. Higher humor means more jokes and playful wit; "
+        "higher sarcasm means drier, more sardonic and deadpan delivery; honesty "
+        "governs how blunt and direct you are (lower honesty may soften or spare "
+        "the full truth); discretion governs how tactful and reserved you are "
+        "about sensitive things (higher discretion = more careful and measured). "
+        "Keep TARS's calm, matter-of-fact, dry tone. Replies are spoken aloud, so "
+        "stay concise."
+    )
+
+
 def _host() -> str:
     return (settings.get("ollama_host") or "http://localhost:11434").rstrip("/")
 
@@ -53,7 +74,7 @@ def chat(prompt: str) -> str:
         raise ValueError("`text` is required.")
 
     model = settings.get("ollama_model") or "llama3.2"
-    system_prompt = settings.get("ollama_system_prompt")
+    system_prompt = (settings.get("ollama_system_prompt") or "") + _personality_prompt()
     host = _host()
 
     messages = []

@@ -374,6 +374,45 @@ $("clearBtn").addEventListener("click", async () => {
   refreshQueue();
 });
 
+// ---------------- personality (TARS) ----------------
+async function loadPersonality() {
+  try {
+    const p = await (await fetch("/api/personality")).json();
+    $("tarsEnabled").checked = !!p.tars_enabled;
+    if (p.tars_humor != null)   { $("tarsHumor").value = p.tars_humor;     $("tarsHumorVal").textContent = p.tars_humor; }
+    if (p.tars_honesty != null) { $("tarsHonesty").value = p.tars_honesty; $("tarsHonestyVal").textContent = p.tars_honesty; }
+    if (p.tars_sarcasm != null) { $("tarsSarcasm").value = p.tars_sarcasm; $("tarsSarcasmVal").textContent = p.tars_sarcasm; }
+    if (p.tars_discretion != null) { $("tarsDiscretion").value = p.tars_discretion; $("tarsDiscretionVal").textContent = p.tars_discretion; }
+  } catch (_) {}
+}
+
+let tarsSaveTimer = null;
+async function savePersonality() {
+  const fd = new FormData();
+  fd.append("tars_enabled", $("tarsEnabled").checked ? "true" : "false");
+  fd.append("tars_humor", $("tarsHumor").value);
+  fd.append("tars_honesty", $("tarsHonesty").value);
+  fd.append("tars_sarcasm", $("tarsSarcasm").value);
+  fd.append("tars_discretion", $("tarsDiscretion").value);
+  try {
+    await postForm("/api/personality", fd);
+    $("tarsStatus").textContent = "Saved - applies to your next message.";
+  } catch (e) {
+    $("tarsStatus").textContent = "Save failed: " + e.message;
+  }
+}
+function queuePersonalitySave() {
+  clearTimeout(tarsSaveTimer);
+  tarsSaveTimer = setTimeout(savePersonality, 300);   // debounce slider drags
+}
+
+// Live value labels + debounced auto-save.
+[["tarsHumor", "tarsHumorVal"], ["tarsHonesty", "tarsHonestyVal"], ["tarsSarcasm", "tarsSarcasmVal"], ["tarsDiscretion", "tarsDiscretionVal"]]
+  .forEach(([slider, label]) => {
+    $(slider).addEventListener("input", () => { $(label).textContent = $(slider).value; queuePersonalitySave(); });
+  });
+$("tarsEnabled").addEventListener("change", savePersonality);
+
 // ---------------- settings (Ollama) ----------------
 async function loadSettings() {
   try {
@@ -543,6 +582,7 @@ $("deleteRecordingsBtn").addEventListener("click", async () => {
 // init
 loadHealth();
 loadSettings();
+loadPersonality();
 loadModel();
 refreshQueue();
 refreshRecordings();

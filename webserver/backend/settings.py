@@ -82,3 +82,61 @@ def save(updates: dict) -> None:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, SETTINGS_PATH)
+
+
+# ---------------------------------------------------------------------------
+# TARS-style personality (Humor / Honesty / Sarcasm), applied to the LLM prompt.
+# Stored in the same settings.json. Kept separate from _DEFAULTS because these
+# are typed (bool/int) rather than strings and must allow 0.
+# ---------------------------------------------------------------------------
+_TARS_DEFAULTS = {
+    "tars_enabled": True,
+    "tars_humor": 75,
+    "tars_honesty": 90,
+    "tars_sarcasm": 30,
+    "tars_discretion": 90,
+}
+
+
+def _as_bool(v) -> bool:
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
+def get_personality() -> dict:
+    """Resolved TARS personality: stored values validated over the defaults."""
+    with _lock:
+        data = _load_file()
+    out = dict(_TARS_DEFAULTS)
+    for k, dv in _TARS_DEFAULTS.items():
+        if k not in data or data[k] is None:
+            continue
+        if isinstance(dv, bool):
+            out[k] = _as_bool(data[k])
+        else:
+            try:
+                out[k] = max(0, min(100, int(data[k])))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def save_personality(updates: dict) -> dict:
+    """Merge TARS personality updates into settings.json and return the result."""
+    with _lock:
+        data = _load_file()
+        for k, dv in _TARS_DEFAULTS.items():
+            if k in updates and updates[k] is not None:
+                if isinstance(dv, bool):
+                    data[k] = _as_bool(updates[k])
+                else:
+                    try:
+                        data[k] = max(0, min(100, int(updates[k])))
+                    except (TypeError, ValueError):
+                        pass
+        tmp = SETTINGS_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, SETTINGS_PATH)
+    return get_personality()

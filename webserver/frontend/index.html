@@ -87,6 +87,41 @@
       </div>
     </section>
 
+    <!-- ---------------- TARS personality ---------------- -->
+    <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Personality (TARS)</h2>
+        <label class="flex items-center gap-2 text-xs text-slate-300">
+          <input id="tarsEnabled" type="checkbox" class="h-4 w-4 rounded border-white/20 bg-ink-700" />
+          Enabled
+        </label>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">
+        TARS-style behavior tuning, applied to every reply. Changes take effect on your next
+        message - no restart.
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label for="tarsHumor" class="ts-label">Humor: <span id="tarsHumorVal" class="text-brand-400 font-medium">75</span>%</label>
+          <input id="tarsHumor" type="range" min="0" max="100" step="5" value="75" class="ts-range mt-2" />
+        </div>
+        <div>
+          <label for="tarsHonesty" class="ts-label">Honesty: <span id="tarsHonestyVal" class="text-brand-400 font-medium">90</span>%</label>
+          <input id="tarsHonesty" type="range" min="0" max="100" step="5" value="90" class="ts-range mt-2" />
+        </div>
+        <div>
+          <label for="tarsSarcasm" class="ts-label">Sarcasm: <span id="tarsSarcasmVal" class="text-brand-400 font-medium">30</span>%</label>
+          <input id="tarsSarcasm" type="range" min="0" max="100" step="5" value="30" class="ts-range mt-2" />
+        </div>
+        <div>
+          <label for="tarsDiscretion" class="ts-label">Discretion: <span id="tarsDiscretionVal" class="text-brand-400 font-medium">90</span>%</label>
+          <input id="tarsDiscretion" type="range" min="0" max="100" step="5" value="90" class="ts-range mt-2" />
+        </div>
+        <span id="tarsStatus" class="text-xs text-slate-400"></span>
+      </div>
+    </section>
+
     <!-- ---------------- Setup / download (single model) ---------------- -->
     <section class="rounded-2xl border border-white/10 bg-ink-800 p-6 shadow-lg shadow-black/20">
       <div class="flex items-center justify-between mb-1">

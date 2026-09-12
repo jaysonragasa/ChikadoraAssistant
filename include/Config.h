@@ -106,6 +106,12 @@ namespace Overlay {
     constexpr bool SHOW_FREEMEM  = false;   // free heap (KB)
 }
 
+// Touch behavior (web-overridable). Tap = speak; holding the pad this long
+// switches pages.
+namespace Touch {
+    constexpr int HOLD_MS = 2000;   // hold duration (ms) to switch page
+}
+
 // GPIO wiring. The mic and amp share BCLK/LRC (single I2S peripheral).
 namespace Pins {
     constexpr int OLED_SDA = 20;
