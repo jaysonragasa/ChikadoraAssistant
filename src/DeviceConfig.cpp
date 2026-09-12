@@ -31,6 +31,8 @@ static const char* KEY_WX_MIN = "wx_min";
 // Overlays
 static const char* KEY_OV_LOOP= "ov_loop";
 static const char* KEY_OV_MEM = "ov_mem";
+// Touch
+static const char* KEY_HOLD   = "hold_ms";
 
 static const char* modeToStr(Config::PlaybackMode m) {
     return m == Config::PlaybackMode::Stream ? "stream" : "chunk";
@@ -81,6 +83,8 @@ RuntimeSettings settings() {
     // Overlays
     s.showLoopTime    = prefs.getBool(KEY_OV_LOOP, s.showLoopTime);
     s.showFreeMem     = prefs.getBool(KEY_OV_MEM, s.showFreeMem);
+    // Touch
+    s.holdMs          = prefs.getInt(KEY_HOLD, s.holdMs);
     return s;
 }
 
@@ -106,6 +110,8 @@ void setSettings(const RuntimeSettings& s) {
     // Overlays
     prefs.putBool(KEY_OV_LOOP, s.showLoopTime);
     prefs.putBool(KEY_OV_MEM, s.showFreeMem);
+    // Touch
+    prefs.putInt(KEY_HOLD, s.holdMs);
     Serial.println("[Config] Saved device settings (restart to apply)");
 }
 

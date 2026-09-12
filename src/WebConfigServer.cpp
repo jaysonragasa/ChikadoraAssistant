@@ -115,6 +115,12 @@ void WebConfigServer::handleRoot() {
         "<input id='eye_r' name='eye_r' type='range' min='0' max='20' value='" + String(s.eyeRoundness) + "'>"
         "<label class='chk'><input id='show_mouth' type='checkbox' name='show_mouth'" + String(s.showMouth ? " checked" : "") + "> Show mouth</label>"
 
+        "<h2>Touch</h2>"
+        "<p class='hint'>Tap = speak. Hold the pad this long to switch pages.</p>"
+        "<label>Hold to switch page (seconds)</label>"
+        "<input name='hold_s' type='number' step='0.5' min='0.5' max='5' value='" +
+        String(s.holdMs / 1000.0, 1) + "'>"
+
         "<h2>Overlays (top-left)</h2>"
         "<label class='chk'><input type='checkbox' name='ov_loop'" + String(s.showLoopTime ? " checked" : "") + "> Show loop time (Hz)</label>"
         "<label class='chk'><input type='checkbox' name='ov_mem'" + String(s.showFreeMem ? " checked" : "") + "> Show free memory (KB)</label>"
@@ -203,6 +209,12 @@ void WebConfigServer::handleSave() {
     // Overlays
     s.showLoopTime = server.hasArg("ov_loop");
     s.showFreeMem  = server.hasArg("ov_mem");
+
+    // Touch hold duration (entered in seconds, stored as ms).
+    if (server.hasArg("hold_s")) {
+        float sec = server.arg("hold_s").toFloat();
+        s.holdMs = constrain((int)(sec * 1000.0f), 300, 5000);
+    }
 
     // Weather
     s.weatherEnabled = server.hasArg("wx_en");

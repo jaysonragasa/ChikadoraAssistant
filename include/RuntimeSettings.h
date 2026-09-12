@@ -35,4 +35,7 @@ struct RuntimeSettings {
     // Top-left status overlays (drawn behind the eyes).
     bool   showLoopTime               = Config::Overlay::SHOW_LOOPTIME;
     bool   showFreeMem                = Config::Overlay::SHOW_FREEMEM;
+
+    // Touch: hold this many ms to switch pages (tap = speak).
+    int    holdMs                     = Config::Touch::HOLD_MS;
 };

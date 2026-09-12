@@ -15,6 +15,19 @@ inline WeatherCategory weatherCategory(int code) {
     return WeatherCategory::Rain;                                 // drizzle/rain/showers
 }
 
+// Spoken-friendly phrase for a weather code (used by the weather voice summary).
+inline const char* weatherConditionText(int code) {
+    switch (weatherCategory(code)) {
+        case WeatherCategory::Clear:  return "clear skies";
+        case WeatherCategory::Clouds: return "cloudy skies";
+        case WeatherCategory::Rain:   return "rain";
+        case WeatherCategory::Snow:   return "snow";
+        case WeatherCategory::Storm:  return "thunderstorms";
+        case WeatherCategory::Fog:    return "fog";
+    }
+    return "unknown conditions";
+}
+
 // One hour of forecast.
 struct HourlyForecast {
     int   hour = 0;    // hour of day, 0-23
@@ -30,4 +43,5 @@ struct WeatherData {
     int   currentCode = 0;
     HourlyForecast hours[MAX_HOURS];
     int   hourCount   = 0;
+    int   utcOffsetSeconds = 0;   // local timezone offset for the coordinates
 };

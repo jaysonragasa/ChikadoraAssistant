@@ -1,45 +1,68 @@
 #pragma once
 #include <Arduino.h>
 
-// Turns a raw pressed/released touch signal into tap gestures.
+// Turns a raw, bouncy/pulsing touch signal into two gestures:
+//   Tap       - a normal press then release            -> "speak"
+//   LongPress - the pad held for `holdMs` continuously  -> "switch page"
 //
-// A release (press then let go) counts as one tap. Two taps within `windowMs`
-// are a DoubleTap; a lone tap becomes a SingleTap once the window elapses (so
-// SingleTap is intentionally delayed by up to windowMs to disambiguate).
+// The TTP223B output isn't a clean steady HIGH while held - it dips LOW briefly
+// and repeatedly. A naive debounce treats each dip as a release, firing a tap on
+// every dip (so it "starts listening over and over" during a hold). The fix is
+// an ASYMMETRIC debounce:
+//   * a press is registered immediately (first HIGH), and
+//   * a release is only registered after the signal stays LOW continuously for
+//     `releaseMs` - so short dips during a hold are bridged and the press reads
+//     as one continuous hold.
 //
-// Poll update() every loop with the current press state and time. Pure logic,
-// no I/O - a single responsibility that's easy to reason about and test.
+// A Tap fires on the confirmed release (about `releaseMs` after you lift); a
+// LongPress fires while still held, once the press crosses `holdMs`, and the
+// eventual release then produces no Tap.
+//
+// Poll update() every loop with the raw press state and current time.
 class TapDetector {
 public:
-    enum class Event { None, SingleTap, DoubleTap };
+    enum class Event { None, Tap, LongPress };
 
-    Event update(bool pressed, unsigned long now) {
-        Event ev = Event::None;
+    // Hold duration (ms) that triggers a LongPress. Default 2000 ms (2 s).
+    void setHoldMs(unsigned long ms) { holdMs = ms; }
 
-        // Release edge = one tap.
-        if (!pressed && wasPressed) {
-            pendingTaps++;
-            lastReleaseAt = now;
-            if (pendingTaps >= 2) {
-                ev = Event::DoubleTap;
-                pendingTaps = 0;
+    Event update(bool rawPressed, unsigned long now) {
+        if (rawPressed) {
+            lastHigh = now;                       // remember the last HIGH sample
+            if (!held) {                          // press begins on the first HIGH
+                held = true;
+                pressStart = now;
+                longFired = false;
+            }
+        } else if (held && (now - lastHigh) >= releaseMs) {
+            // LOW has persisted long enough to count as a real release.
+            held = false;
+            unsigned long heldFor = lastHigh - pressStart;   // touched duration
+            if (!longFired && heldFor >= minTapMs) {
+                return Event::Tap;
             }
         }
-        // A single pending tap resolves once the double-tap window passes.
-        if (pendingTaps == 1 && (now - lastReleaseAt) > windowMs) {
-            ev = Event::SingleTap;
-            pendingTaps = 0;
-        }
 
-        wasPressed = pressed;
-        return ev;
+        // Held continuously past the threshold -> one LongPress (fires while held).
+        if (held && !longFired && (now - pressStart) >= holdMs) {
+            longFired = true;
+            return Event::LongPress;
+        }
+        return Event::None;
     }
 
-    void reset() { wasPressed = false; pendingTaps = 0; }
+    void reset() {
+        held = false;
+        longFired = false;
+    }
 
 private:
-    static const unsigned long windowMs = 400;   // double-tap window
-    bool          wasPressed   = false;
-    int           pendingTaps  = 0;
-    unsigned long lastReleaseAt = 0;
+    static const unsigned long releaseMs = 200;   // LOW must persist this long = release (bridges dips)
+    static const unsigned long minTapMs  = 30;    // ignore ultra-short blips
+    unsigned long holdMs = 2000;                  // hold this long to switch page
+
+    bool          held = false;        // debounced "finger down" state
+    bool          longFired = false;   // LongPress already emitted for this press
+    unsigned long pressStart = 0;      // when the current press began
+    unsigned long lastHigh = 0;        // last time the raw signal was HIGH
 };

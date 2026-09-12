@@ -1,5 +1,6 @@
 #include "OledFaceDisplay.h"
 #include <Arduino.h>
+#include <time.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -320,20 +321,45 @@ void OledFaceDisplay::drawWeather() {
         return;
     }
 
-    // ---- Current conditions (top) ----
+    // ---- R0C0: time & date (top-left) ----
+    // NTP gives UTC; Open-Meteo's utc_offset_seconds converts it to local time.
+    time_t utc = time(nullptr);
+    const bool timeValid = utc > 1700000000UL;   // NTP-synced (after ~Nov 2023)
+    if (timeValid) {
+        time_t local = utc + weatherData.utcOffsetSeconds;
+        struct tm tmv;
+        gmtime_r(&local, &tmv);
+        char hhmm[6], date[16];
+        strftime(hhmm, sizeof(hhmm), "%H:%M", &tmv);
+        strftime(date, sizeof(date), "%a %b %d", &tmv);   // e.g. "Wed Aug 26"
+        display.setTextSize(2);
+        display.setCursor(2, 3);   display.print(hhmm);
+        display.setTextSize(1);
+        display.setCursor(0, 23);  display.print(date);
+    } else {
+        display.setTextSize(2);
+        display.setCursor(2, 3);   display.print("--:--");
+        display.setTextSize(1);
+        display.setCursor(0, 23);  display.print("syncing...");
+    }
+
+    // Divider between the two top cells.
+    display.drawFastVLine(63, 0, 37, WHITE);
+
+    // ---- R0C1: current weather + animated icon (top-right) ----
     WeatherCategory cur = weatherCategory(weatherData.currentCode);
-    drawWeatherIcon(20, 18, 16, cur, weatherFrame);
+    drawWeatherIcon(80, 12, 16, cur, weatherFrame);
     display.setTextSize(2);
-    display.setCursor(46, 6);
+    display.setCursor(92, 4);
     display.print((int)lroundf(weatherData.currentTemp));
     display.print("C");
     display.setTextSize(1);
-    display.setCursor(46, 26);
+    display.setCursor(68, 27);
     display.print(categoryLabel(cur));
 
     display.drawFastHLine(0, 37, 128, WHITE);
 
-    // ---- Hourly strip (bottom): hour / tiny icon / temp per column ----
+    // ---- R1C0S2: 4-hour forecast (bottom, spans both columns) ----
     int cols = weatherData.hourCount < 4 ? weatherData.hourCount : 4;
     for (int i = 0; i < cols; i++) {
         const HourlyForecast& h = weatherData.hours[i];

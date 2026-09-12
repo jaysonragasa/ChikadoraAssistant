@@ -56,8 +56,8 @@ private:
 
     // Runtime state.
     State  state = State::Idle;
-    bool   wasTouched = false;
     String currentJobId;
+    unsigned long lastJobPollAt = 0;   // non-blocking TTS job polling
 
     // Main-loop frequency + free-heap sampling for the top-left overlays.
     unsigned long loopCount = 0;
@@ -67,6 +67,7 @@ private:
     WeatherData   weatherData;
     unsigned long lastWeatherPollAt = 0;
     bool          weatherPolled = false;
+    bool          speakingWeather = false;   // true while speaking a weather summary
 
     // Chunked-playback queue: a TTS job id per clip, plus which one we're on.
     String clipJobIds[Config::Playback::MAX_CLIPS];
@@ -74,15 +75,20 @@ private:
     int    clipIndex = 0;
 
     // State handlers.
-    void handleIdle(bool touched, unsigned long now);
-    void handleListening(bool touched);
+    void handleGesture(TapDetector::Event ev);   // dispatch tap/long-press
     void handleProcessing();
     void handleSpeaking();
 
     // Paging + speak helpers.
     void startListening();   // begin the tap->record->...->speak flow
+    void stopAndProcess();   // finish a recording and kick off transcription
+    void stopSpeaking();     // abort any in-progress playback/queue
     void togglePage();       // switch between the Eyes and Weather pages
     void pollWeatherIfDue(unsigned long now);   // refresh the forecast periodically
+    void   speakWeather();       // speak a summary of the current forecast
+    String weatherSummary();     // build the spoken weather summary text
+    String timeDatePhrase();     // spoken "It is <time> on <date>" (empty if unsynced)
+    void   concludeSpeaking();   // return to the right page when a reply finishes
 
     // Helpers.
     String think(const String& heard);        // LLM reply or echo/fallback

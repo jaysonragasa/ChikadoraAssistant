@@ -58,6 +58,7 @@ bool OpenMeteoClient::fetch(float lat, float lon, WeatherData& out) {
     WeatherData w;   // start fresh
     w.currentTemp = doc["current"]["temperature_2m"] | 0.0f;
     w.currentCode = doc["current"]["weather_code"] | 0;
+    w.utcOffsetSeconds = doc["utc_offset_seconds"] | 0;   // for the local clock
 
     JsonArray temps = doc["hourly"]["temperature_2m"].as<JsonArray>();
     JsonArray codes = doc["hourly"]["weather_code"].as<JsonArray>();

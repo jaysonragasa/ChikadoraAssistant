@@ -2,6 +2,7 @@
 #include "WifiConnector.h"
 #include "TextChunker.h"
 #include "DeviceConfig.h"
+#include <time.h>
 #include "OtaUpdater.h"
 
 VoiceAssistant::VoiceAssistant(IDisplay& display,
@@ -30,6 +31,7 @@ void VoiceAssistant::begin() {
     display.setEyeConfig(settings.eyeWidth, settings.eyeHeight, settings.eyeGap,
                          settings.eyeRoundness, settings.showMouth);
     display.setOverlayFlags(settings.showLoopTime, settings.showFreeMem);
+    tapDetector.setHoldMs(settings.holdMs);
 
     // 1) "Connecting to: <ssid>" with a spinner while the first attempt runs.
     display.showConnecting(Config::Wifi::SSID);
@@ -63,6 +65,9 @@ void VoiceAssistant::begin() {
     Serial.println("WiFi Connected! IP: " + ip);
     webConfig.begin(display);
     OtaUpdater::begin(Config::Ota::HOSTNAME, Config::Ota::PASSWORD);
+    // Sync time from NTP (UTC). The weather page converts it to local time using
+    // Open-Meteo's utc_offset_seconds for the configured coordinates.
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
     display.showConnected(ip.c_str());
     delay(1500);
 
@@ -136,23 +141,48 @@ void VoiceAssistant::loop() {
     }
 
     display.update();
-    webConfig.handle();   // serve the config page (responsive when idle/listening)
-    OtaUpdater::handle(); // accept OTA firmware pushes when idle
+    webConfig.handle();   // serve the config page
+    OtaUpdater::handle(); // accept OTA firmware pushes
 
-    // Speaking/Processing run to the exclusion of touch handling.
-    if (state == State::Speaking)   { handleSpeaking();   return; }
-    if (state == State::Processing) { handleProcessing(); return; }
+    // Sample touch every iteration in EVERY state, so a long-press can interrupt
+    // speech/processing and switch pages.
+    handleGesture(tapDetector.update(touch.isTouched(), now));
 
-    // Refresh the forecast in the background while idle (the fetch blocks
-    // briefly, so we avoid doing it mid-interaction).
-    if (state == State::Idle) pollWeatherIfDue(now);
+    // Per-state work (no touch reading here).
+    switch (state) {
+        case State::Listening:
+            mic.update();
+            if (!mic.isRecording()) stopAndProcess();   // buffer filled -> process
+            break;
+        case State::Processing: handleProcessing(); break;
+        case State::Speaking:   handleSpeaking();   break;
+        case State::Idle:       pollWeatherIfDue(now); break;
+    }
 
-    const bool touched = touch.isTouched();
-    if (state == State::Idle)           handleIdle(touched, now);
-    else if (state == State::Listening) handleListening(touched);
+    delay(5);
+}
 
-    wasTouched = touched;
-    delay(10);
+// Dispatch a touch gesture. Tap = speak (and page-appropriate actions);
+// LongPress = interrupt anything in progress and switch page.
+void VoiceAssistant::handleGesture(TapDetector::Event ev) {
+    if (ev == TapDetector::Event::LongPress) {
+        Serial.println("Long press - switching page.");
+        if (state == State::Speaking || state == State::Processing) stopSpeaking();
+        if (state == State::Listening) { mic.stopRecording(); mic.releaseBuffer(); }
+        state = State::Idle;
+        togglePage();
+    } else if (ev == TapDetector::Event::Tap) {
+        if (state == State::Idle)            startListening();
+        else if (state == State::Listening)  stopAndProcess();
+        // Speaking / Processing: taps are ignored (long-press to interrupt).
+    }
+}
+
+void VoiceAssistant::stopSpeaking() {
+    speaker.stop();
+    clipCount = 0;
+    clipIndex = 0;
+    speakingWeather = false;
 }
 
 void VoiceAssistant::pollWeatherIfDue(unsigned long now) {
@@ -163,10 +193,76 @@ void VoiceAssistant::pollWeatherIfDue(unsigned long now) {
     Serial.println("[Weather] Polling Open-Meteo...");
     if (weather.fetch(settings.weatherLat, settings.weatherLon, weatherData)) {
         display.setWeather(weatherData);
+        // If the user is looking at the weather page, speak the fresh forecast.
+        if (page == Page::Weather) speakWeather();
     }
     // Advance the timer even on failure so we don't hammer the API on errors.
     lastWeatherPollAt = now;
     weatherPolled = true;
+}
+
+// Spoken "It is <time> on <weekday, month day>." Empty until NTP has synced.
+String VoiceAssistant::timeDatePhrase() {
+    time_t utc = time(nullptr);
+    if (utc < 1700000000UL) return "";                 // clock not synced yet
+    time_t local = utc + weatherData.utcOffsetSeconds;
+    struct tm tmv;
+    gmtime_r(&local, &tmv);
+
+    char date[32];
+    strftime(date, sizeof(date), "%A, %B %e", &tmv);   // "Wednesday, August 26"
+    int h = tmv.tm_hour;
+    const char* ap = h < 12 ? "AM" : "PM";
+    int h12 = h % 12;
+    if (h12 == 0) h12 = 12;
+    char t[16];
+    snprintf(t, sizeof(t), "%d:%02d %s", h12, tmv.tm_min, ap);
+    return "It is " + String(t) + " on " + String(date) + ". ";
+}
+
+// Build a spoken summary: time/date + current conditions + the next few hours.
+String VoiceAssistant::weatherSummary() {
+    const WeatherData& w = weatherData;
+    String s = timeDatePhrase();
+    s += "Current weather is " + String((int)roundf(w.currentTemp)) +
+         " degrees with " + weatherConditionText(w.currentCode) + ". ";
+    int n = w.hourCount < 4 ? w.hourCount : 4;
+    if (n > 0) {
+        s += "Hourly forecast: ";
+        for (int i = 0; i < n; i++) {
+            int h = w.hours[i].hour;
+            const char* ap = h < 12 ? "AM" : "PM";
+            int h12 = h % 12;
+            if (h12 == 0) h12 = 12;
+            s += String(h12) + " " + ap + ", " +
+                 String((int)roundf(w.hours[i].temp)) + " degrees " +
+                 weatherConditionText(w.hours[i].code);
+            s += (i < n - 1) ? ". " : ".";
+        }
+    }
+    return s;
+}
+
+void VoiceAssistant::speakWeather() {
+    if (state != State::Idle || !weatherData.valid) return;   // don't interrupt
+    String summary = weatherSummary();
+    Serial.println("[Weather] Speaking: " + summary);
+    if (queueReply(summary)) {
+        speakingWeather = true;
+        state = State::Processing;   // the poller plays the clips
+    }
+}
+
+// Return to the right page after a spoken reply finishes: the weather page for
+// a weather summary, otherwise the idle face.
+void VoiceAssistant::concludeSpeaking() {
+    if (speakingWeather) {
+        speakingWeather = false;
+        display.showWeather();
+        state = State::Idle;
+    } else {
+        goIdle();
+    }
 }
 
 void VoiceAssistant::goIdle() {
@@ -174,16 +270,8 @@ void VoiceAssistant::goIdle() {
     state = State::Idle;
 }
 
-void VoiceAssistant::handleIdle(bool touched, unsigned long now) {
-    switch (tapDetector.update(touched, now)) {
-        case TapDetector::Event::SingleTap: startListening(); break;
-        case TapDetector::Event::DoubleTap: togglePage();     break;
-        default: break;
-    }
-}
-
 void VoiceAssistant::startListening() {
-    Serial.println("Single tap - starting recording...");
+    Serial.println("Tap - starting recording...");
     page = Page::Eyes;              // interaction always happens on the face
     display.showListening();
     speaker.playDingDong();         // audible feedback
@@ -196,6 +284,7 @@ void VoiceAssistant::togglePage() {
         page = Page::Weather;
         Serial.println("Double tap - switching to Weather page.");
         display.showWeather();
+        weatherPolled = false;   // force a fresh poll so it fetches + speaks now
     } else {
         page = Page::Eyes;
         Serial.println("Double tap - switching to Eyes page.");
@@ -203,17 +292,12 @@ void VoiceAssistant::togglePage() {
     }
 }
 
-void VoiceAssistant::handleListening(bool touched) {
-    mic.update();
-
-    // Stop on a second tap, or when the mic buffer fills automatically.
-    const bool tappedAgain = touched && !wasTouched;
-    if (!tappedAgain && mic.isRecording()) return;
-
+void VoiceAssistant::stopAndProcess() {
     Serial.println("Stopping recording and processing...");
     mic.stopRecording();
     display.showThinking();     // eyes shut while sending/thinking
     state = State::Processing;
+    lastJobPollAt = 0;
 
     String heard = api.transcribeAudio(mic.getAudioData(), mic.getAudioSize());
     Serial.println("Heard: " + heard);
@@ -289,18 +373,22 @@ bool VoiceAssistant::queueReply(const String& text) {
 }
 
 void VoiceAssistant::handleProcessing() {
+    // Poll the job at most ~2x/second, but return immediately otherwise so the
+    // loop keeps sampling touch (a long-press can interrupt).
+    if (millis() - lastJobPollAt < 500) return;
+    lastJobPollAt = millis();
+
     int status = api.isTtsJobDone(currentJobId);
     if (status == 1) {
         Serial.println("TTS Job done! Playing audio...");
         String url = api.getAudioUrl(currentJobId);
         speaker.playUrl(url.c_str());
-        display.showSpeaking();
+        if (!speakingWeather) display.showSpeaking();   // keep the weather page if summarizing
         state = State::Speaking;
     } else if (status == -1) {
         Serial.println("[Error] TTS Job failed or returned 404. Canceling...");
-        goIdle();
+        concludeSpeaking();
     }
-    delay(500); // polling interval
 }
 
 void VoiceAssistant::handleSpeaking() {
@@ -323,6 +411,6 @@ void VoiceAssistant::handleSpeaking() {
         state = State::Processing;   // keep the speaking face; poll the next clip
     } else {
         Serial.println("All clips played.");
-        goIdle();
+        concludeSpeaking();
     }
 }
