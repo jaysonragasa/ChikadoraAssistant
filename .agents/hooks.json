@@ -1,0 +1,28 @@
+{
+  "chikadora-robot-sync": {
+    "enabled": false,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python chikadora_robot_hook.py PreInvocation"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python chikadora_robot_hook.py Stop"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python chikadora_robot_hook.py PreToolUse"
+          }
+        ]
+      }
+    ]
+  }
+}

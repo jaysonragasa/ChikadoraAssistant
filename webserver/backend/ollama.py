@@ -131,13 +131,13 @@ def chat(prompt: str) -> str:
     return reply
 
 
-def list_models() -> list:
+def list_models(timeout: float = 15.0) -> list:
     """Return the names of models installed on the Ollama server."""
     host = _host()
     url = f"{host}/api/tags"
     req = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except TimeoutError:
         raise RuntimeError(f"Ollama timed out listing models at {host}.")
@@ -157,7 +157,7 @@ def list_models() -> list:
 def reachable() -> bool:
     """True if the Ollama server responds to a tags request."""
     try:
-        list_models()
+        list_models(timeout=0.1)  # Extremely short timeout since it's local
         return True
     except Exception:
         return False

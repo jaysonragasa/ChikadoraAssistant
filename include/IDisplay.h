@@ -2,6 +2,12 @@
 #include <stdint.h>
 #include "WeatherData.h"
 
+struct ServerStatus {
+    bool ttsReachable = true;
+    bool sttAvailable = true;
+    bool ollamaReachable = true;
+};
+
 class IDisplay {
 public:
     virtual ~IDisplay() = default;
@@ -10,6 +16,8 @@ public:
     virtual void showListening() = 0;
     virtual void showThinking() = 0;   // "sending" - eyes shut
     virtual void showSpeaking() = 0;
+    virtual void showAgentThinking() = 0;
+    virtual void showAgentSpeaking() = 0;
     virtual void triggerBlink() = 0;
     virtual void shakeEyes() = 0;      // brief "I didn't catch that" shake
 
@@ -31,9 +39,8 @@ public:
     // Failed/retrying: closed "sleeping" eyes bobbing up/down + a corner spinner.
     virtual void showSleeping() = 0;
 
-    // Toggle a small "!TTS" badge in the top-right of the face, shown when the
-    // TTS/LLM server couldn't be reached (running on default settings).
-    virtual void setServerWarning(bool show) = 0;
+    // Updates the badges shown in the top-right corner of the face (!TTS, !STT, !O)
+    virtual void setServerStatus(const ServerStatus& status) = 0;
 
     // Set the face/eye geometry. Applied immediately (used for live preview from
     // the web config page and at boot from stored settings).

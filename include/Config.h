@@ -73,6 +73,10 @@ namespace Messages {
     constexpr const char* LLM_ERROR = "Sorry, I couldn't reach my brain right now.";
 }
 
+namespace Agent {
+    constexpr const char* NAME = "Mochi";
+}
+
 namespace Playback {
     constexpr PlaybackMode MODE = PlaybackMode::Stream;
 

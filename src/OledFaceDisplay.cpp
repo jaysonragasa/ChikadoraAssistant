@@ -36,6 +36,15 @@ void OledFaceDisplay::drawFace(Expression expr, bool blinkClosed) {
     display.clearDisplay();
 
     const bool eyesClosed = blinkClosed || expr == Expression::Thinking;
+    
+    // Apply dynamic animations for agent states
+    if (expr == Expression::AgentThinking) {
+        gazeX = 12.0f * sinf(millis() / 250.0f);
+        gazeY = 0;
+    } else if (expr == Expression::AgentSpeaking) {
+        gazeY = -4.0f + 4.0f * sinf(millis() / 150.0f);
+    }
+    
     const int ox = (int)lroundf(gazeX);
     const int oy = (int)lroundf(gazeY);
 
@@ -71,12 +80,23 @@ void OledFaceDisplay::drawFace(Expression expr, bool blinkClosed) {
         }
     }
 
-    // ---------- Server-offline badge (top-right, BEHIND the eyes) ----------
-    if (serverWarning) {
-        display.setTextSize(1);
-        display.setTextColor(WHITE);
-        display.setCursor(104, 1);
+    // ---------- Server-offline badges (top-right, BEHIND the eyes) ----------
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    int badgeY = 1;
+    if (!srvStatus.ttsReachable) {
+        display.setCursor(104, badgeY);
         display.print("!TTS");
+        badgeY += 9;
+    }
+    if (!srvStatus.sttAvailable) {
+        display.setCursor(104, badgeY);
+        display.print("!STT");
+        badgeY += 9;
+    }
+    if (!srvStatus.ollamaReachable) {
+        display.setCursor(116, badgeY);
+        display.print("!O");
     }
 
     // ---------- Status overlays (top-left, BEHIND the eyes) ----------
@@ -114,9 +134,13 @@ void OledFaceDisplay::drawFace(Expression expr, bool blinkClosed) {
         display.fillRect(cxL - (r + 3) + ox, eyeCY - (r + 3) + oy, mw, r + 3, BLACK); // erase top -> u
         display.fillRect(cxR - (r + 3) + ox, eyeCY - (r + 3) + oy, mw, r + 3, BLACK);
     } else {
-        // Normal / listening: rounded rectangles from the configured geometry.
+        // Normal / listening / agent: rounded rectangles from the configured geometry.
         int w = eyeWidth, h = eyeHeight, rr = eyeRoundness;
         if (expr == Expression::Listening) { w += 4; h += 6; if (rr < 10) rr = 10; }
+        else if (expr == Expression::AgentSpeaking) {
+            w += (int)(3.0f * sinf(millis() / 150.0f));
+            h += (int)(3.0f * sinf(millis() / 150.0f));
+        }
         int maxr = (w < h ? w : h) / 2;   // Adafruit GFX needs r <= min(w,h)/2
         if (rr > maxr) rr = maxr;
         display.fillRoundRect(cxL - w / 2 + ox, eyeCY - h / 2 + oy, w, h, rr, WHITE);
@@ -390,9 +414,13 @@ void OledFaceDisplay::setWeather(const WeatherData& data) {
     if (screen == Screen::Weather) drawWeather();
 }
 
-void OledFaceDisplay::setServerWarning(bool show) {
-    if (serverWarning == show) return;
-    serverWarning = show;
+void OledFaceDisplay::setServerStatus(const ServerStatus& status) {
+    if (srvStatus.ttsReachable == status.ttsReachable &&
+        srvStatus.sttAvailable == status.sttAvailable &&
+        srvStatus.ollamaReachable == status.ollamaReachable) {
+        return;
+    }
+    srvStatus = status;
     if (screen == Screen::Face) drawFace(currentExpr, isBlinking);  // refresh badge now
 }
 
@@ -461,6 +489,18 @@ void OledFaceDisplay::showSpeaking() {
     drawFace(currentExpr, false);
 }
 
+void OledFaceDisplay::showAgentThinking() {
+    screen = Screen::Face;
+    currentExpr = Expression::AgentThinking;
+    drawFace(currentExpr, false);
+}
+
+void OledFaceDisplay::showAgentSpeaking() {
+    screen = Screen::Face;
+    currentExpr = Expression::AgentSpeaking;
+    drawFace(currentExpr, false);
+}
+
 void OledFaceDisplay::triggerBlink() {
     if (!isBlinking) {
         isBlinking = true;
@@ -523,6 +563,14 @@ void OledFaceDisplay::update() {
         if (now - blinkStartTime >= blinkDuration) {
             isBlinking = false;
             drawFace(currentExpr, false); // restore current expression + gaze
+        }
+        return;
+    }
+
+    if (currentExpr == Expression::AgentThinking || currentExpr == Expression::AgentSpeaking) {
+        if (now >= nextFrameAt) {
+            drawFace(currentExpr, false);
+            nextFrameAt = now + 33;
         }
         return;
     }

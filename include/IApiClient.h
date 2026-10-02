@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "IDisplay.h"
 
 class IApiClient {
 public:
@@ -19,9 +20,9 @@ public:
     virtual void setServer(const String& ip, uint16_t port) = 0;
 
     // Quick liveness check against the server (GET /api/health, short timeout).
-    // Returns true if the server answered 200. Used for the boot "connecting to
+    // Returns status flags for TTS, STT, and Ollama. Used for the boot "connecting to
     // server" screen so it can poll without blocking for long.
-    virtual bool ping() = 0;
+    virtual ServerStatus ping() = 0;
 
     // Voice used for TTS synthesis. Set from the device's stored settings so the
     // configured voice takes effect without reflashing.

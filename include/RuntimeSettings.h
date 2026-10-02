@@ -18,6 +18,7 @@ struct RuntimeSettings {
     bool   speakOnNoSpeech            = Config::Audio::SPEAK_ON_NO_SPEECH;
     Config::PlaybackMode playbackMode = Config::Playback::MODE;
     int    wordsPerChunk              = Config::Playback::WORDS_PER_CHUNK;
+    String agentName                  = Config::Agent::NAME;
 
     // Face / eye geometry (live-previewable from the web config page).
     int    eyeWidth                   = Config::Eyes::WIDTH;

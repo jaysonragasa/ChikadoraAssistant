@@ -35,6 +35,13 @@ void WebConfigServer::begin(IDisplay& disp) {
     server.on("/save", HTTP_POST, [this]() { handleSave(); });
     server.on("/restart", HTTP_POST, [this]() { handleRestart(); });
     server.on("/eye/live", HTTP_POST, [this]() { handleEyeLive(); });
+    
+    // Agent endpoints
+    server.on("/agent_start", HTTP_POST, [this]() { handleAgentStart(); });
+    server.on("/agent_thinking", HTTP_POST, [this]() { handleAgentThinking(); });
+    server.on("/agent_end", HTTP_POST, [this]() { handleAgentEnd(); });
+    server.on("/agent_speak", HTTP_POST, [this]() { handleAgentSpeak(); });
+    
     server.begin();
     Serial.println("[WebConfig] Config page at http://" + WiFi.localIP().toString() + "/");
 }
@@ -78,6 +85,8 @@ void WebConfigServer::handleRoot() {
         "<div><label>Port</label>"
         "<input name='port' type='number' min='1' max='65535' value='" + port + "'></div>"
         "</div>"
+        "<label>Agent Name</label>"
+        "<input name='agent_name' value='" + s.agentName + "' placeholder='Mochi'>"
 
         "<h2>Audio</h2>"
         "<label>Voice</label>"
@@ -137,6 +146,18 @@ void WebConfigServer::handleRoot() {
         "<input name='wx_min' type='number' min='1' value='" + String(s.weatherPollMinutes) + "'>"
         "<p class='hint'>Weather powered by "
         "<a href='https://open-meteo.com/' style='color:#8b8bff'>https://open-meteo.com/</a></p>"
+        
+        "<h2>Agent Extensions</h2>"
+        "<p class='hint'>Test the new agent endpoints directly from here.</p>"
+        "<div style='display:flex;gap:8px;margin-bottom:12px;'>"
+        "<button type='button' style='margin-top:0' onclick='fetch(\"/agent_start\",{method:\"POST\"})'>Start</button>"
+        "<button type='button' style='margin-top:0' onclick='fetch(\"/agent_thinking\",{method:\"POST\"})'>Thinking</button>"
+        "<button type='button' style='margin-top:0' onclick='fetch(\"/agent_end\",{method:\"POST\"})'>End</button>"
+        "</div>"
+        "<div style='display:flex;gap:8px;'>"
+        "<input type='text' id='speak_text' placeholder='Text to speak' value='Hello!'>"
+        "<button type='button' style='margin-top:0;width:auto;' onclick='fetch(\"/agent_speak?text=\"+encodeURIComponent(document.getElementById(\"speak_text\").value),{method:\"POST\"})'>Speak</button>"
+        "</div>"
 
         "<button type='submit'>Save</button>"
         "</form>"
@@ -176,6 +197,9 @@ void WebConfigServer::handleSave() {
 
     String voice = server.arg("voice"); voice.trim();
     if (voice.length() > 0) s.voiceId = voice;
+    
+    String agentName = server.arg("agent_name"); agentName.trim();
+    if (agentName.length() > 0) s.agentName = agentName;
 
     if (server.hasArg("mic_gain")) {
         float g = server.arg("mic_gain").toFloat();
@@ -251,4 +275,25 @@ void WebConfigServer::handleRestart() {
                 page("<h1>Restarting...</h1><p>The device is rebooting now.</p>"));
     delay(500);       // let the response flush before we reset
     ESP.restart();
+}
+
+void WebConfigServer::handleAgentStart() {
+    if (onAgentStart) onAgentStart();
+    server.send(200, "text/plain", "ok");
+}
+
+void WebConfigServer::handleAgentThinking() {
+    if (onAgentThinking) onAgentThinking();
+    server.send(200, "text/plain", "ok");
+}
+
+void WebConfigServer::handleAgentEnd() {
+    if (onAgentEnd) onAgentEnd();
+    server.send(200, "text/plain", "ok");
+}
+
+void WebConfigServer::handleAgentSpeak() {
+    String text = server.hasArg("text") ? server.arg("text") : "";
+    if (onAgentSpeak) onAgentSpeak(text);
+    server.send(200, "text/plain", "ok");
 }

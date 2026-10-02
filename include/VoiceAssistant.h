@@ -68,6 +68,7 @@ private:
     unsigned long lastWeatherPollAt = 0;
     bool          weatherPolled = false;
     bool          speakingWeather = false;   // true while speaking a weather summary
+    bool          agentSpeaking = false;     // true while agent is speaking
 
     // Chunked-playback queue: a TTS job id per clip, plus which one we're on.
     String clipJobIds[Config::Playback::MAX_CLIPS];

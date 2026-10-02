@@ -64,6 +64,34 @@ void VoiceAssistant::begin() {
     String ip = WifiConnector::ip();
     Serial.println("WiFi Connected! IP: " + ip);
     webConfig.begin(display);
+    
+    // Wire up Agent Extension callbacks
+    webConfig.onAgentStart = [this]() {
+        agentSpeaking = true;
+        if (queueReply("Agent " + settings.agentName + " ready to serve!")) {
+            state = State::Processing;
+        }
+    };
+    webConfig.onAgentThinking = [this]() {
+        display.showAgentThinking();
+        state = State::Idle;
+    };
+    webConfig.onAgentEnd = [this]() {
+        agentSpeaking = true;
+        if (queueReply("Done working!")) {
+            state = State::Processing;
+        }
+    };
+    webConfig.onAgentSpeak = [this](const String& text) {
+        agentSpeaking = true;
+        if (text.length() > 0) {
+            display.showAgentSpeaking();
+            if (queueReply(text)) {
+                state = State::Processing;
+            }
+        }
+    };
+
     OtaUpdater::begin(Config::Ota::HOSTNAME, Config::Ota::PASSWORD);
     // Sync time from NTP (UTC). The weather page converts it to local time using
     // Open-Meteo's utc_offset_seconds for the configured coordinates.
@@ -81,9 +109,11 @@ void VoiceAssistant::begin() {
     const unsigned long SERVER_CONNECT_MS = 30000;
     unsigned long sstart = millis();
     bool serverUp = false;
+    ServerStatus srvStatus;
     while (millis() - sstart < SERVER_CONNECT_MS) {
         display.update();               // animate the spinner
-        if (api.ping()) { serverUp = true; break; }
+        srvStatus = api.ping();
+        if (srvStatus.ttsReachable) { serverUp = true; break; }
         delay(50);
     }
 
@@ -93,7 +123,7 @@ void VoiceAssistant::begin() {
     } else {
         Serial.println("Server not reachable after timeout.");
     }
-    display.setServerWarning(!serverUp);   // show "!TTS" badge on the face if offline
+    display.setServerStatus(srvStatus);   // show offline badges (!TTS, !STT, !O) on the face
     Serial.printf("Settings: voice=%s micGain=%.2f vol=%.2f useLlm=%d noSpeech=%d mode=%s wpc=%d\n",
                   settings.voiceId.c_str(), settings.micGain, settings.speakerVolume,
                   settings.useLlm, settings.speakOnNoSpeech,
@@ -274,6 +304,7 @@ void VoiceAssistant::speakWeather() {
 // Return to the right page after a spoken reply finishes: the weather page for
 // a weather summary, otherwise the idle face.
 void VoiceAssistant::concludeSpeaking() {
+    agentSpeaking = false;
     if (speakingWeather) {
         speakingWeather = false;
         display.showWeather();
@@ -319,6 +350,12 @@ void VoiceAssistant::stopAndProcess() {
 
     String heard = api.transcribeAudio(mic.getAudioData(), mic.getAudioSize());
     Serial.println("Heard: " + heard);
+
+    if (heard.length() > 0) {
+        // If we reached here, the server is up and STT is working.
+        // Update the badges by pinging (very fast now)
+        display.setServerStatus(api.ping());
+    }
 
     // Free the recording's ~144 KB now so playback has heap to work with.
     mic.releaseBuffer();
@@ -401,7 +438,11 @@ void VoiceAssistant::handleProcessing() {
         Serial.println("TTS Job done! Playing audio...");
         String url = api.getAudioUrl(currentJobId);
         speaker.playUrl(url.c_str());
-        if (!speakingWeather) display.showSpeaking();   // keep the weather page if summarizing
+        if (agentSpeaking) {
+            display.showAgentSpeaking();
+        } else if (!speakingWeather) {
+            display.showSpeaking();   // keep the weather page if summarizing
+        }
         state = State::Speaking;
     } else if (status == -1) {
         Serial.println("[Error] TTS Job failed or returned 404. Canceling...");

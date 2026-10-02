@@ -20,7 +20,7 @@ private:
 
     // Facial expression per assistant state. Tracked so a blink can restore
     // whatever expression is currently showing.
-    enum class Expression { Normal, Listening, Thinking, Happy };
+    enum class Expression { Normal, Listening, Thinking, Happy, AgentThinking, AgentSpeaking };
     Expression currentExpr = Expression::Normal;
 
     // What the screen is currently showing. Boot screens take over the display
@@ -38,8 +38,8 @@ private:
     unsigned long nextWanderAt = 0;// when to pick a new gaze target (idle only)
     unsigned long nextFrameAt = 0; // throttles the easing redraw (~30 fps)
 
-    // Shown as a "!TTS" badge on the face when the server is unreachable.
-    bool          serverWarning = false;
+    // Shown as badges on the face when the server components are unreachable.
+    ServerStatus  srvStatus;
 
     // Configurable eye geometry (live-previewable / persisted). Eyes are centered
     // horizontally around x=64; each eye sits `eyeGap` px from center.
@@ -88,6 +88,8 @@ public:
     void showListening() override;
     void showThinking() override;
     void showSpeaking() override;
+    void showAgentThinking() override;
+    void showAgentSpeaking() override;
     void triggerBlink() override;
     void shakeEyes() override;
     void showConnecting(const char* ssid) override;
@@ -96,7 +98,7 @@ public:
     void showWeather() override;
     void setWeather(const WeatherData& data) override;
     void showSleeping() override;
-    void setServerWarning(bool show) override;
+    void setServerStatus(const ServerStatus& status) override;
     void setEyeConfig(int width, int height, int gap, int roundness, bool showMouth) override;
     void setOverlayFlags(bool showLoopTime, bool showFreeMem) override;
     void setMetrics(float loopHz, uint32_t freeHeapBytes) override;

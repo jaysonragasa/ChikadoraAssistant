@@ -17,6 +17,7 @@ static const char* KEY_LLM    = "use_llm";
 static const char* KEY_NOSPCH = "no_speech";
 static const char* KEY_PBMODE = "pb_mode";     // "stream" | "chunk"
 static const char* KEY_WPC    = "wpc";
+static const char* KEY_AGENT  = "agent_name";
 // Eyes
 static const char* KEY_EYE_W  = "eye_w";
 static const char* KEY_EYE_H  = "eye_h";
@@ -66,6 +67,7 @@ RuntimeSettings settings() {
     s.useLlm          = prefs.getBool(KEY_LLM, s.useLlm);
     s.speakOnNoSpeech = prefs.getBool(KEY_NOSPCH, s.speakOnNoSpeech);
     s.wordsPerChunk   = prefs.getInt(KEY_WPC, s.wordsPerChunk);
+    s.agentName       = prefs.getString(KEY_AGENT, s.agentName);
     String mode       = prefs.getString(KEY_PBMODE, modeToStr(s.playbackMode));
     s.playbackMode    = (mode == "chunk") ? Config::PlaybackMode::Chunk
                                           : Config::PlaybackMode::Stream;
@@ -95,6 +97,7 @@ void setSettings(const RuntimeSettings& s) {
     prefs.putBool(KEY_LLM, s.useLlm);
     prefs.putBool(KEY_NOSPCH, s.speakOnNoSpeech);
     prefs.putInt(KEY_WPC, s.wordsPerChunk);
+    prefs.putString(KEY_AGENT, s.agentName);
     prefs.putString(KEY_PBMODE, modeToStr(s.playbackMode));
     // Eyes
     prefs.putInt(KEY_EYE_W, s.eyeWidth);

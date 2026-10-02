@@ -236,15 +236,30 @@ void LocalTtsClient::setServer(const String& ip, uint16_t port) {
     Serial.println("[API] Server set to " + baseUrl);
 }
 
-bool LocalTtsClient::ping() {
-    if (WiFi.status() != WL_CONNECTED) return false;
+ServerStatus LocalTtsClient::ping() {
+    ServerStatus status;
+    status.ttsReachable = false;
+    status.sttAvailable = false;
+    status.ollamaReachable = false;
+
+    if (WiFi.status() != WL_CONNECTED) return status;
     HTTPClient http;
     http.begin(baseUrl + "/api/health");
-    http.setConnectTimeout(1500);   // fail fast so the boot spinner stays lively
-    http.setTimeout(1500);
+    http.setConnectTimeout(3000);   // 3 second grace period
+    http.setTimeout(3000);
     int code = http.GET();
+    if (code == 200) {
+        status.ttsReachable = true;
+        String payload = http.getString();
+        DynamicJsonDocument doc(1024);
+        DeserializationError err = deserializeJson(doc, payload);
+        if (!err) {
+            status.sttAvailable = doc["stt_available"] | false;
+            status.ollamaReachable = doc["ollama_reachable"] | false;
+        }
+    }
     http.end();
-    return code == 200;
+    return status;
 }
 
 void LocalTtsClient::setVoiceId(const String& voice) {
