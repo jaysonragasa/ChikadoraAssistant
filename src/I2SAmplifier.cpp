@@ -21,7 +21,7 @@ void I2SAmplifier::setStreamingMode(bool enabled) {
 
 void I2SAmplifier::setVolume(float v) {
     if (v < 0.0f) v = 0.0f;
-    if (v > 4.0f) v = 4.0f;   // allow some boost, but keep it sane
+    if (v > 1.5f) v = 1.5f;   // MAX98357A has hardware gain; clamp to 1.5x to prevent square-wave distortion
     volume = v;
     Serial.printf("[Audio] Volume: %.2f\n", volume);
 }
@@ -46,12 +46,22 @@ void I2SAmplifier::installI2S(uint32_t sr) {
         i2sInstalled = false;
     }
 
+    uint32_t targetSr = sr;
+    if (sr == 24000) {
+        // MAX98357A explicitly does not support 24kHz with 50% duty cycle LRCLK.
+        // Oversample 2x to 48kHz which MAX98357A natively and cleanly supports.
+        targetSr = 48000;
+        oversample2x = true;
+    } else {
+        oversample2x = false;
+    }
+
     int bufCount = streamMode ? 16 : 8;
     int bufLen   = streamMode ? 512 : 256;
 
     i2s_config_t cfg = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = sr,
+        .sample_rate = targetSr,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
@@ -68,10 +78,16 @@ void I2SAmplifier::installI2S(uint32_t sr) {
         .data_out_num = doutPin,
         .data_in_num = I2S_PIN_NO_CHANGE
     };
-    i2s_driver_install(I2S_NUM_0, &cfg, 0, NULL);
+    esp_err_t err = i2s_driver_install(I2S_NUM_0, &cfg, 0, NULL);
+    if (err != ESP_OK) {
+        Serial.printf("[Audio] i2s_driver_install failed: %d\n", err);
+        return;
+    }
     i2s_set_pin(I2S_NUM_0, &pins);
     i2s_zero_dma_buffer(I2S_NUM_0);
     i2sInstalled = true;
+    Serial.printf("[Audio] I2S installed: input %u Hz -> output %u Hz (2x: %d)\n",
+                  sr, targetSr, oversample2x ? 1 : 0);
 }
 
 void I2SAmplifier::flushAndUninstall() {
@@ -109,7 +125,7 @@ bool I2SAmplifier::downloadWav(const char* url) {
     // Never let reserve() throw std::bad_alloc (the C3's unwinder crashes on a
     // throw). Require a known, capped length that fits a contiguous block.
     const size_t MAX_WAV = 250 * 1024;
-    const size_t MARGIN  = 24 * 1024;
+    const size_t MARGIN  = 12 * 1024;
     if (len <= 0) {
         Serial.println("[Audio] No Content-Length; refusing unbounded download");
         dl.end();
@@ -223,20 +239,27 @@ void I2SAmplifier::updateBuffered() {
         bufPlaying = false;    // done; main loop calls stop() to flush + cleanup
         return;
     }
-    int16_t stereo[PLAYBACK_FRAMES_PER_UPDATE * 2];
+    int16_t stereo[PLAYBACK_FRAMES_PER_UPDATE * 4];
+    int out = 0;
     int frames = 0;
     while (frames < PLAYBACK_FRAMES_PER_UPDATE && playPos + frameBytes <= dataEnd) {
         int16_t l = (int16_t)(wavData[playPos] | (wavData[playPos + 1] << 8));
         int16_t r = l;
         if (numChannels >= 2) r = (int16_t)(wavData[playPos + 2] | (wavData[playPos + 3] << 8));
-        stereo[frames * 2]     = scaleSample(l);
-        stereo[frames * 2 + 1] = scaleSample(r);
+        l = scaleSample(l);
+        r = scaleSample(r);
+        stereo[out++] = l;
+        stereo[out++] = r;
+        if (oversample2x) {
+            stereo[out++] = l;
+            stereo[out++] = r;
+        }
         playPos += frameBytes;
         frames++;
     }
-    if (frames > 0) {
+    if (out > 0) {
         size_t written = 0;
-        i2s_write(I2S_NUM_0, stereo, frames * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+        i2s_write(I2S_NUM_0, stereo, out * sizeof(int16_t), &written, portMAX_DELAY);
     }
 }
 
@@ -339,10 +362,21 @@ void I2SAmplifier::playUrlStreaming(const char* url) {
     }
     installI2S(sampleRate);
     streaming = true;
+
+    // Pre-fill DMA buffer to prevent initial buffer underrun
+    for (int pre = 0; pre < 6 && pcmRemaining > 0; pre++) {
+        if (netStream && netStream->available() > 0) {
+            updateStreaming();
+        } else {
+            delay(10);
+            if (netStream && netStream->available() > 0) updateStreaming();
+            else break;
+        }
+    }
 }
 
 void I2SAmplifier::updateStreaming() {
-    if (!streaming) return;
+    if (!streaming || !netStream) return;
     const size_t frameBytes = (size_t)numChannels * 2;
     if (pcmRemaining < (long)frameBytes) {
         streaming = false;     // done; main loop calls stop() to flush + cleanup
@@ -363,7 +397,7 @@ void I2SAmplifier::updateStreaming() {
     if (r <= 0) return;
     pcmRemaining -= r;
 
-    int16_t stereo[READ_CHUNK];
+    int16_t stereo[READ_CHUNK * 2];
     int out = 0;
     int frames = r / (int)frameBytes;
     for (int f = 0; f < frames; f++) {
@@ -371,8 +405,14 @@ void I2SAmplifier::updateStreaming() {
         int16_t l = (int16_t)(p[0] | (p[1] << 8));
         int16_t rr = l;
         if (numChannels >= 2) rr = (int16_t)(p[2] | (p[3] << 8));
-        stereo[out++] = scaleSample(l);
-        stereo[out++] = scaleSample(rr);
+        l = scaleSample(l);
+        rr = scaleSample(rr);
+        stereo[out++] = l;
+        stereo[out++] = rr;
+        if (oversample2x) {
+            stereo[out++] = l;
+            stereo[out++] = rr;
+        }
     }
     size_t written = 0;
     i2s_write(I2S_NUM_0, stereo, out * sizeof(int16_t), &written, portMAX_DELAY);
@@ -390,22 +430,37 @@ void I2SAmplifier::playUrl(const char* url) {
 void I2SAmplifier::playDingDong() {
     installI2S(16000);
 
-    int sample_rate = 16000;
-    float amplitude = 16000.0 * volume; // half of max 16-bit range, scaled by volume
+    const int sample_rate = 16000;
+    // Pleasant chime volume (max ~5500 out of 32767)
+    float effVol = volume > 1.0f ? 1.0f : (volume < 0.1f ? 0.2f : volume);
+    float baseAmp = 5500.0f * effVol;
     size_t bytes_written;
 
-    int samples1 = (sample_rate * 180) / 1000; // "Ding" 800 Hz 100 ms
+    // "Ding" ~523 Hz (C5) with decay envelope (140 ms)
+    int samples1 = (sample_rate * 140) / 1000;
     for (int i = 0; i < samples1; i++) {
-        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 523 * i / sample_rate));
-        int32_t sample32 = ((uint16_t)sample << 16) | (uint16_t)sample;
-        i2s_write(I2S_NUM_0, &sample32, sizeof(sample32), &bytes_written, portMAX_DELAY);
+        float decay = expf(-4.0f * (float)i / (float)samples1);
+        int16_t sample = (int16_t)(baseAmp * decay * sinf(2.0f * PI * 523.25f * (float)i / (float)sample_rate));
+        int16_t stereo[2] = { sample, sample };
+        i2s_write(I2S_NUM_0, stereo, sizeof(stereo), &bytes_written, portMAX_DELAY);
     }
-    int samples2 = (sample_rate * 260) / 1000; // "Dong" 1000 Hz 150 ms
+
+    // Short silence gap (25 ms)
+    int pauseSamples = (sample_rate * 25) / 1000;
+    int16_t silence[2] = { 0, 0 };
+    for (int i = 0; i < pauseSamples; i++) {
+        i2s_write(I2S_NUM_0, silence, sizeof(silence), &bytes_written, portMAX_DELAY);
+    }
+
+    // "Dong" ~784 Hz (G5) with decay envelope (220 ms)
+    int samples2 = (sample_rate * 220) / 1000;
     for (int i = 0; i < samples2; i++) {
-        int16_t sample = (int16_t)(amplitude * sin(2.0 * PI * 784 * i / sample_rate));
-        int32_t sample32 = ((uint16_t)sample << 16) | (uint16_t)sample;
-        i2s_write(I2S_NUM_0, &sample32, sizeof(sample32), &bytes_written, portMAX_DELAY);
+        float decay = expf(-3.5f * (float)i / (float)samples2);
+        int16_t sample = (int16_t)(baseAmp * decay * sinf(2.0f * PI * 783.99f * (float)i / (float)sample_rate));
+        int16_t stereo[2] = { sample, sample };
+        i2s_write(I2S_NUM_0, stereo, sizeof(stereo), &bytes_written, portMAX_DELAY);
     }
+
     flushAndUninstall();
 }
 

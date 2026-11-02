@@ -31,6 +31,7 @@ private:
     uint32_t sampleRate = 16000;
     uint16_t numChannels = 1;
     uint16_t bitsPerSample = 16;
+    bool     oversample2x = false;  // MAX98357A does not support 24kHz LRCLK; 2x oversamples to 48kHz
 
     // ---- buffered (download-then-play) state ----
     std::vector<uint8_t> wavData;

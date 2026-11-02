@@ -188,7 +188,9 @@ void VoiceAssistant::loop() {
         case State::Idle:       pollWeatherIfDue(now); break;
     }
 
-    delay(5);
+    if (state != State::Speaking) {
+        delay(5);
+    }
 }
 
 // Dispatch a touch gesture. Tap = speak (and page-appropriate actions);

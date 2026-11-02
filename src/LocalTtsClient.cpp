@@ -72,7 +72,7 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
 
     WiFiClient client;
     Serial.printf("[API] Connecting to Moonshine at %s:%d...\n", serverIp.c_str(), moonshinePort);
-    client.setTimeout(10);
+    client.setTimeout(15000); // 15 seconds (Arduino setTimeout is in milliseconds!)
     if (!client.connect(serverIp.c_str(), moonshinePort)) {
         Serial.println("[API] Error: Failed to connect to Moonshine!");
         return "";
@@ -126,7 +126,7 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     
     unsigned long timeout = millis();
     while (client.connected() && !client.available()) {
-        if (millis() - timeout > 10000) {
+        if (millis() - timeout > 15000) {
             Serial.println("[API] Error: Timeout waiting for Moonshine transcription!");
             client.stop();
             return "";
@@ -136,10 +136,25 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     
     String responseBody = "";
     bool isBody = false;
-    while (client.available()) {
-        String line = client.readStringUntil('\n');
-        if (line == "\r" || line == "") { isBody = true; continue; }
-        if (isBody) responseBody += line;
+    unsigned long lastByteAt = millis();
+    while (client.connected() || client.available()) {
+        if (client.available()) {
+            String line = client.readStringUntil('\n');
+            if (!isBody) {
+                if (line == "\r" || line == "") { isBody = true; }
+            } else {
+                responseBody += line;
+            }
+            lastByteAt = millis();
+        } else {
+            if (isBody && responseBody.length() > 0 && (millis() - lastByteAt > 200)) {
+                break; // Complete response body received
+            }
+            if (millis() - lastByteAt > 3000) {
+                break; // Stalled
+            }
+            delay(5);
+        }
     }
     client.stop();
 
@@ -247,7 +262,7 @@ ServerStatus LocalTtsClient::ping() {
     if (WiFi.status() != WL_CONNECTED) return status;
 
     WiFiClient client;
-    client.setTimeout(1); // 1-second connect timeout
+    client.setTimeout(1500); // 1.5-second connect timeout in milliseconds
 
     // 1. Check Kokoro TTS port
     if (client.connect(serverIp.c_str(), kokoroPort)) {
