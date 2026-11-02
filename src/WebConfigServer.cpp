@@ -30,6 +30,11 @@ static String page(const String& body) {
         "transition:opacity 0.2s}button:hover{opacity:0.9}"
         ".ok{color:#34d399}.val{color:#818cf8;font-weight:600}.hint{font-size:12px;color:#64748b;margin-top:4px}"
         ".badge{background:#1e1b4b;color:#a5b4fc;border:1px solid #312e81;padding:2px 8px;border-radius:12px;font-size:11px}"
+        ".qc{background:#161922;border:1px solid #ffffff14;border-radius:12px;padding:12px;margin-bottom:10px}"
+        ".qhdr{display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:6px}"
+        ".qstt{background:#1f293780;border-left:3px solid #6366f1;padding:6px 10px;border-radius:6px;font-size:13px;margin-bottom:6px}"
+        ".qtts{background:#1e293b80;border-left:3px solid #10b981;padding:6px 10px;border-radius:6px;font-size:13px}"
+        "audio{width:100%;height:32px;margin-top:6px;outline:none}"
         "</style></head><body><div class='card'>";
     return h + body + "</div></body></html>";
 }
@@ -181,6 +186,15 @@ void WebConfigServer::handleRoot() {
         "<button type='button' style='margin-top:0;width:auto;' onclick='fetch(\"/agent_speak?text=\"+encodeURIComponent(document.getElementById(\"speak_text\").value),{method:\"POST\"})'>Speak</button>"
         "</div>"
 
+        // ---------------- Live Audio Queue ----------------
+        "<h2>Live Voice Queue & Audio</h2>"
+        "<p class='hint'>Recordings from mic & responses from Kokoro (via Gateway :8080)</p>"
+        "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>"
+        "<span id='q_st' class='hint'>Connecting to gateway...</span>"
+        "<button type='button' style='margin:0;width:auto;padding:5px 10px;font-size:11px;' onclick='fetchQueue()'>Refresh</button>"
+        "</div>"
+        "<div id='q_items'></div>"
+
         "<button type='submit'>Save & Apply Settings</button>"
         "</form>"
 
@@ -197,6 +211,31 @@ void WebConfigServer::handleRoot() {
         "q('show_mouth').addEventListener('change',live);"
         "[['t_humor','tv_humor'],['t_honest','tv_honest'],['t_sarc','tv_sarc'],['t_disc','tv_disc']].forEach("
         "function(a){var e=q(a[0]),l=q(a[1]);e.addEventListener('input',function(){l.textContent=e.value;});});"
+        "function fetchQueue(){"
+        "var ip=(q('ip')?q('ip').value:'')||'192.168.1.34';"
+        "fetch('http://'+ip+':8080/api/queue')"
+        ".then(function(r){return r.json();})"
+        ".then(function(data){"
+        "var st=q('q_st'),el=q('q_items');"
+        "if(!data||data.length===0){"
+        "st.textContent='Gateway online (0 recordings)';"
+        "el.innerHTML='<p class=\"hint\" style=\"text-align:center;\">No voice interactions yet. Tap Mochi to speak!</p>';"
+        "return;}"
+        "st.textContent='Gateway online ('+data.length+' interactions)';"
+        "el.innerHTML=data.slice(0,10).map(function(j){"
+        "var mic=j.mic_audio_url?'<audio controls preload=\"none\" src=\"http://'+ip+':8080'+j.mic_audio_url+'\"></audio>':'';"
+        "var tts=j.tts_audio_url?'<audio controls preload=\"none\" src=\"http://'+ip+':8080'+j.tts_audio_url+'\"></audio>':'';"
+        "return '<div class=\"qc\">'+"
+        "'<div class=\"qhdr\"><span>'+(j.timestamp||'')+'</span><span class=\"badge\">'+(j.status||'done')+'</span></div>'+"
+        "'<div class=\"qstt\"><b>Mic:</b> '+(j.transcription||'<i>Audio received</i>')+mic+'</div>'+"
+        "'<div class=\"qtts\"><b>Mochi:</b> '+(j.response||'<i>Pending</i>')+tts+'</div>'+"
+        "'</div>';}).join('');"
+        "}).catch(function(e){"
+        "var st=q('q_st');"
+        "if(st)st.innerHTML='<span style=\"color:#f87171\">Gateway offline</span> (Check '+ip+':8080)';"
+        "});}"
+        "setInterval(fetchQueue,3000);"
+        "setTimeout(fetchQueue,500);"
         "</script>";
 
     server.send(200, "text/html", page(body));
