@@ -34,6 +34,18 @@ static const char* KEY_OV_LOOP= "ov_loop";
 static const char* KEY_OV_MEM = "ov_mem";
 // Touch
 static const char* KEY_HOLD   = "hold_ms";
+// Multi-port AI endpoints (phone)
+static const char* KEY_KOKORO = "p_kokoro";
+static const char* KEY_MOON   = "p_moon";
+static const char* KEY_OLLAMA = "p_ollama";
+static const char* KEY_OMODEL = "o_model";
+static const char* KEY_OPROMPT= "o_prompt";
+// TARS personality
+static const char* KEY_TARS_EN= "tars_en";
+static const char* KEY_THUMOR = "t_humor";
+static const char* KEY_THONEST= "t_honest";
+static const char* KEY_TSARC  = "t_sarc";
+static const char* KEY_TDISC  = "t_disc";
 
 static const char* modeToStr(Config::PlaybackMode m) {
     return m == Config::PlaybackMode::Stream ? "stream" : "chunk";
@@ -87,6 +99,21 @@ RuntimeSettings settings() {
     s.showFreeMem     = prefs.getBool(KEY_OV_MEM, s.showFreeMem);
     // Touch
     s.holdMs          = prefs.getInt(KEY_HOLD, s.holdMs);
+
+    // Multi-port AI endpoints
+    s.kokoroPort      = prefs.getUShort(KEY_KOKORO, s.kokoroPort);
+    s.moonshinePort   = prefs.getUShort(KEY_MOON, s.moonshinePort);
+    s.ollamaPort      = prefs.getUShort(KEY_OLLAMA, s.ollamaPort);
+    s.ollamaModel     = prefs.getString(KEY_OMODEL, s.ollamaModel);
+    s.ollamaSystemPrompt = prefs.getString(KEY_OPROMPT, s.ollamaSystemPrompt);
+
+    // TARS personality
+    s.tarsEnabled     = prefs.getBool(KEY_TARS_EN, s.tarsEnabled);
+    s.tarsHumor       = prefs.getInt(KEY_THUMOR, s.tarsHumor);
+    s.tarsHonesty     = prefs.getInt(KEY_THONEST, s.tarsHonesty);
+    s.tarsSarcasm     = prefs.getInt(KEY_TSARC, s.tarsSarcasm);
+    s.tarsDiscretion  = prefs.getInt(KEY_TDISC, s.tarsDiscretion);
+
     return s;
 }
 
@@ -115,6 +142,21 @@ void setSettings(const RuntimeSettings& s) {
     prefs.putBool(KEY_OV_MEM, s.showFreeMem);
     // Touch
     prefs.putInt(KEY_HOLD, s.holdMs);
+
+    // Multi-port AI endpoints
+    prefs.putUShort(KEY_KOKORO, s.kokoroPort);
+    prefs.putUShort(KEY_MOON, s.moonshinePort);
+    prefs.putUShort(KEY_OLLAMA, s.ollamaPort);
+    prefs.putString(KEY_OMODEL, s.ollamaModel);
+    prefs.putString(KEY_OPROMPT, s.ollamaSystemPrompt);
+
+    // TARS personality
+    prefs.putBool(KEY_TARS_EN, s.tarsEnabled);
+    prefs.putInt(KEY_THUMOR, s.tarsHumor);
+    prefs.putInt(KEY_THONEST, s.tarsHonesty);
+    prefs.putInt(KEY_TSARC, s.tarsSarcasm);
+    prefs.putInt(KEY_TDISC, s.tarsDiscretion);
+
     Serial.println("[Config] Saved device settings (restart to apply)");
 }
 

@@ -40,12 +40,25 @@ namespace Ota {
 }
 
 namespace Server {
-    // BOOTSTRAP: where to reach the local server. Can't be web-configured -
-    // the device needs the address to fetch settings in the first place.
-    constexpr const char* IP       = "192.168.1.34"; //192.168.1.60";  // PC running the local server
-    constexpr uint16_t    PORT     = 8000;
-    // DEFAULT: web-overridable (device settings "voice_id").
-    constexpr const char* VOICE_ID = "af_sarah";      // Kokoro voice
+    // BOOTSTRAP: where to reach the phone server.
+    constexpr const char* IP             = "192.168.1.34";
+    constexpr uint16_t    PORT           = 8000;          // Legacy / fallback port
+    constexpr uint16_t    KOKORO_PORT    = 8000;          // Kokoro TTS direct port
+    constexpr uint16_t    MOONSHINE_PORT = 8002;          // Moonshine STT direct port
+    constexpr uint16_t    OLLAMA_PORT    = 11434;         // Ollama LLM direct port
+
+    // DEFAULT: web-overridable (device settings)
+    constexpr const char* VOICE_ID       = "af_sarah";    // Kokoro voice
+    constexpr const char* OLLAMA_MODEL   = "gemma4:31b-cloud";
+    constexpr const char* SYSTEM_PROMPT  = "You are Mochi, a friendly and concise desk robot. Keep replies to 1-2 short sentences without markdown or emojis.";
+}
+
+namespace Personality {
+    constexpr bool TARS_ENABLED    = false;
+    constexpr int  TARS_HUMOR      = 75;
+    constexpr int  TARS_HONESTY    = 90;
+    constexpr int  TARS_SARCASM    = 30;
+    constexpr int  TARS_DISCRETION = 90;
 }
 
 namespace Audio {

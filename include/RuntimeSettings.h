@@ -39,4 +39,20 @@ struct RuntimeSettings {
 
     // Touch: hold this many ms to switch pages (tap = speak).
     int    holdMs                     = Config::Touch::HOLD_MS;
+
+    // Multi-port AI server endpoints on phone
+    uint16_t kokoroPort               = Config::Server::KOKORO_PORT;
+    uint16_t moonshinePort            = Config::Server::MOONSHINE_PORT;
+    uint16_t ollamaPort               = Config::Server::OLLAMA_PORT;
+
+    // Ollama model & system prompt
+    String ollamaModel                = Config::Server::OLLAMA_MODEL;
+    String ollamaSystemPrompt         = Config::Server::SYSTEM_PROMPT;
+
+    // TARS personality tuning
+    bool   tarsEnabled                = Config::Personality::TARS_ENABLED;
+    int    tarsHumor                  = Config::Personality::TARS_HUMOR;
+    int    tarsHonesty                = Config::Personality::TARS_HONESTY;
+    int    tarsSarcasm                = Config::Personality::TARS_SARCASM;
+    int    tarsDiscretion             = Config::Personality::TARS_DISCRETION;
 };

@@ -3,7 +3,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-// Helper to URL-encode strings for x-www-form-urlencoded POST requests
+// Helper to URL-encode strings for HTTP GET/POST query params
 String urlEncode(String str) {
     String encodedString = "";
     for (size_t i = 0; i < str.length(); i++) {
@@ -22,10 +22,48 @@ String urlEncode(String str) {
 }
 
 LocalTtsClient::LocalTtsClient(String ip, int port, String voice) 
-    : serverIp(ip), serverPort(port), voiceId(voice) {
-    baseUrl = "http://" + serverIp + ":" + String(serverPort);
+    : serverIp(ip), 
+      kokoroPort(Config::Server::KOKORO_PORT),
+      moonshinePort(Config::Server::MOONSHINE_PORT),
+      ollamaPort(Config::Server::OLLAMA_PORT),
+      voiceId(voice),
+      ollamaModel(Config::Server::OLLAMA_MODEL),
+      ollamaSystemPrompt(Config::Server::SYSTEM_PROMPT),
+      tarsEnabled(Config::Personality::TARS_ENABLED),
+      tarsHumor(Config::Personality::TARS_HUMOR),
+      tarsHonesty(Config::Personality::TARS_HONESTY),
+      tarsSarcasm(Config::Personality::TARS_SARCASM),
+      tarsDiscretion(Config::Personality::TARS_DISCRETION) {}
+
+void LocalTtsClient::configure(const String& ip, const RuntimeSettings& s) {
+    serverIp = ip;
+    kokoroPort = s.kokoroPort;
+    moonshinePort = s.moonshinePort;
+    ollamaPort = s.ollamaPort;
+    voiceId = s.voiceId;
+    ollamaModel = s.ollamaModel;
+    ollamaSystemPrompt = s.ollamaSystemPrompt;
+    tarsEnabled = s.tarsEnabled;
+    tarsHumor = s.tarsHumor;
+    tarsHonesty = s.tarsHonesty;
+    tarsSarcasm = s.tarsSarcasm;
+    tarsDiscretion = s.tarsDiscretion;
+    Serial.printf("[API] Configured AI phone at %s (Kokoro:%u Moonshine:%u Ollama:%u)\n",
+                  serverIp.c_str(), kokoroPort, moonshinePort, ollamaPort);
 }
 
+void LocalTtsClient::setServer(const String& ip, uint16_t port) {
+    serverIp = ip;
+    if (port > 0) kokoroPort = port;
+}
+
+void LocalTtsClient::setVoiceId(const String& voice) {
+    if (voice.length() > 0) voiceId = voice;
+}
+
+// -----------------------------------------------------------------------------
+// STT: Send recorded WAV directly to Moonshine (/transcribe)
+// -----------------------------------------------------------------------------
 String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("[API] Error: WiFi not connected");
@@ -33,15 +71,17 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     }
 
     WiFiClient client;
-    Serial.printf("[API] Connecting to %s:%d...\n", serverIp.c_str(), serverPort);
-    if (!client.connect(serverIp.c_str(), serverPort)) {
-        Serial.println("[API] Error: Failed to connect to server! Is uvicorn running with --host 0.0.0.0?");
+    Serial.printf("[API] Connecting to Moonshine at %s:%d...\n", serverIp.c_str(), moonshinePort);
+    client.setTimeout(10);
+    if (!client.connect(serverIp.c_str(), moonshinePort)) {
+        Serial.println("[API] Error: Failed to connect to Moonshine!");
         return "";
     }
 
     String boundary = "----ESP32Boundary123456";
+    // Moonshine FastAPI expects the multipart field name to be "file"
     String head = "--" + boundary + "\r\n";
-    head += "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n";
+    head += "Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n";
     head += "Content-Type: audio/wav\r\n\r\n";
     String tail = "\r\n--" + boundary + "--\r\n";
 
@@ -62,31 +102,32 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
 
     uint32_t contentLength = head.length() + 44 + dataSize + tail.length();
 
-    client.println("POST /api/transcribe HTTP/1.1");
-    client.println("Host: " + serverIp);
+    client.println("POST /transcribe HTTP/1.1");
+    client.println("Host: " + serverIp + ":" + String(moonshinePort));
     client.println("Content-Type: multipart/form-data; boundary=" + boundary);
     client.print("Content-Length: ");
     client.println(contentLength);
+    client.println("Connection: close");
     client.println();
 
     client.print(head);
     client.write(header, 44);
     
-    // Stream audio data
+    // Stream audio data in 1KB chunks
     size_t sent = 0;
-    while(sent < dataSize) {
+    while (sent < dataSize) {
         size_t toSend = (dataSize - sent > 1024) ? 1024 : (dataSize - sent);
         client.write(pcmData + sent, toSend);
         sent += toSend;
     }
     client.print(tail);
 
-    Serial.println("[API] Sent POST request. Waiting for response...");
+    Serial.println("[API] Sent audio to Moonshine. Waiting for transcription...");
     
     unsigned long timeout = millis();
     while (client.connected() && !client.available()) {
-        if (millis() - timeout > 10000) { // 10 sec timeout
-            Serial.println("[API] Error: Timeout waiting for response!");
+        if (millis() - timeout > 10000) {
+            Serial.println("[API] Error: Timeout waiting for Moonshine transcription!");
             client.stop();
             return "";
         }
@@ -95,23 +136,21 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     
     String responseBody = "";
     bool isBody = false;
-    Serial.println("\n--- RAW HTTP RESPONSE ---");
     while (client.available()) {
         String line = client.readStringUntil('\n');
-        Serial.println(line); // Print raw HTTP headers and body to debug
-        if (line == "\r") { isBody = true; continue; }
+        if (line == "\r" || line == "") { isBody = true; continue; }
         if (isBody) responseBody += line;
     }
     client.stop();
-    Serial.println("-------------------------");
 
-    Serial.println("[API] Response Body: " + responseBody);
+    Serial.println("[API] Moonshine Response: " + responseBody);
 
-    // Parse JSON: {"text": "..."}
+    // Parse JSON: {"text": "..."} or {"transcription": "..."}
     StaticJsonDocument<2048> doc;
     DeserializationError error = deserializeJson(doc, responseBody);
-    if (!error && doc.containsKey("text")) {
-        return doc["text"].as<String>();
+    if (!error) {
+        if (doc.containsKey("text")) return doc["text"].as<String>();
+        if (doc.containsKey("transcription")) return doc["transcription"].as<String>();
     } else {
         Serial.print("[API] JSON Parse Error: ");
         Serial.println(error.c_str());
@@ -119,123 +158,86 @@ String LocalTtsClient::transcribeAudio(uint8_t* pcmData, size_t dataSize) {
     return "";
 }
 
-String LocalTtsClient::submitTtsJob(String text) {
-    if (WiFi.status() != WL_CONNECTED) return "";
-
-    HTTPClient http;
-    http.begin(baseUrl + "/api/synthesize");
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    // We MUST specify language=a (American English) otherwise the server defaults to "Auto",
-    // which causes the Kokoro TTS engine to crash since it expects 'a', 'b', 'f', etc.
-    String postData = "model_id=kokoro-82m&text=" + urlEncode(text) + "&voice=" + urlEncode(voiceId) + "&language=a";
-    
-    int httpCode = http.POST(postData);
-    if (httpCode > 0) {
-        if (httpCode == 200 || httpCode == 201) {
-            String payload = http.getString();
-            DynamicJsonDocument doc(2048);
-            DeserializationError error = deserializeJson(doc, payload);
-            if (!error && doc.containsKey("id")) {
-                String id = doc["id"].as<String>();
-                http.end();
-                return id;
-            } else {
-                Serial.print("[API] JSON Parse Error: ");
-                Serial.println(error.c_str());
-            }
-        } else {
-            Serial.printf("[API] Server returned HTTP %d: %s\n", httpCode, http.getString().c_str());
-        }
-    } else {
-        Serial.printf("[API] POST failed, error: %s\n", http.errorToString(httpCode).c_str());
-    }
-    
-    http.end();
-    return "";
-}
-
+// -----------------------------------------------------------------------------
+// LLM: Send prompt directly to Ollama (/api/generate) with TARS personality
+// -----------------------------------------------------------------------------
 String LocalTtsClient::chat(String prompt) {
     if (WiFi.status() != WL_CONNECTED) return "";
 
+    String url = "http://" + serverIp + ":" + String(ollamaPort) + "/api/generate";
     HTTPClient http;
-    http.begin(baseUrl + "/api/chat");
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    // Gemini can take a few seconds to respond; give it room before timing out.
-    http.setTimeout(20000);
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(25000);
 
-    String postData = "text=" + urlEncode(prompt);
+    String systemText = ollamaSystemPrompt;
+    if (tarsEnabled) {
+        systemText += " TARS parameters: Humor " + String(tarsHumor) +
+                      "%, Sarcasm " + String(tarsSarcasm) +
+                      "%, Honesty " + String(tarsHonesty) +
+                      "%, Discretion " + String(tarsDiscretion) +
+                      "%. Speak in character.";
+    }
 
-    int httpCode = http.POST(postData);
+    DynamicJsonDocument reqDoc(2048);
+    reqDoc["model"]  = ollamaModel;
+    reqDoc["prompt"] = prompt;
+    reqDoc["system"] = systemText;
+    reqDoc["stream"] = false;
+
+    String jsonBody;
+    serializeJson(reqDoc, jsonBody);
+
+    Serial.printf("[API] Querying Ollama (%s)...\n", ollamaModel.c_str());
+    int httpCode = http.POST(jsonBody);
     String reply = "";
     if (httpCode == 200) {
         String payload = http.getString();
-        // Replies can be a few sentences; size the doc generously.
         DynamicJsonDocument doc(8192);
         DeserializationError error = deserializeJson(doc, payload);
-        if (!error && doc.containsKey("reply")) {
-            reply = doc["reply"].as<String>();
+        if (!error && doc.containsKey("response")) {
+            reply = doc["response"].as<String>();
         } else {
-            Serial.print("[API] Chat JSON parse error: ");
+            Serial.print("[API] Ollama JSON parse error: ");
             Serial.println(error.c_str());
         }
     } else if (httpCode > 0) {
-        Serial.printf("[API] Chat server returned HTTP %d: %s\n",
-                      httpCode, http.getString().c_str());
+        Serial.printf("[API] Ollama HTTP %d: %s\n", httpCode, http.getString().c_str());
     } else {
-        Serial.printf("[API] Chat POST failed, error: %s\n",
-                      http.errorToString(httpCode).c_str());
+        Serial.printf("[API] Ollama POST failed: %s\n", http.errorToString(httpCode).c_str());
     }
 
     http.end();
     return reply;
 }
 
-int LocalTtsClient::isTtsJobDone(String jobId) {
-    if (WiFi.status() != WL_CONNECTED) return -1;
-
-    HTTPClient http;
-    http.begin(baseUrl + "/api/jobs/" + jobId);
-    int httpCode = http.GET();
-    int result = 0; // default: pending
+// -----------------------------------------------------------------------------
+// TTS: Generate direct Kokoro URL (GET /tts?text=...&voice=...)
+// -----------------------------------------------------------------------------
+String LocalTtsClient::submitTtsJob(String text) {
+    if (WiFi.status() != WL_CONNECTED) return "";
     
-    if (httpCode == 200) {
-        String payload = http.getString();
-        DynamicJsonDocument doc(2048);
-        if (!deserializeJson(doc, payload)) {
-            String state = doc["state"].as<String>();
-            bool hasResult = doc["has_result"].as<bool>();
-            if (state == "done" && hasResult) {
-                result = 1;
-            } else if (state == "error" || state == "canceled") {
-                result = -1;
-                if (doc.containsKey("error") && !doc["error"].isNull()) {
-                    Serial.println("[API] Server job failed with error: " + doc["error"].as<String>());
-                }
-            }
-        }
-    } else if (httpCode == 404) {
-        // Job not found - server might have restarted or deleted it
-        result = -1;
-    } else if (httpCode < 0) {
-        // Connection error
-        result = -1;
-    }
-    http.end();
-    return result;
+    // Direct Kokoro endpoint URL
+    currentTtsUrl = "http://" + serverIp + ":" + String(kokoroPort) + 
+                    "/tts?text=" + urlEncode(text) + 
+                    "&voice=" + urlEncode(voiceId);
+    
+    Serial.println("[API] Prepared Kokoro direct URL: " + currentTtsUrl);
+    return "direct_stream";
+}
+
+int LocalTtsClient::isTtsJobDone(String jobId) {
+    // Direct stream is ready immediately without polling
+    return 1;
 }
 
 String LocalTtsClient::getAudioUrl(String jobId) {
-    return baseUrl + "/api/jobs/" + jobId + "/result";
+    return currentTtsUrl;
 }
 
-void LocalTtsClient::setServer(const String& ip, uint16_t port) {
-    serverIp = ip;
-    serverPort = port;
-    baseUrl = "http://" + serverIp + ":" + String(serverPort);
-    Serial.println("[API] Server set to " + baseUrl);
-}
-
+// -----------------------------------------------------------------------------
+// Ping: Fast socket check across Kokoro, Moonshine, and Ollama
+// -----------------------------------------------------------------------------
 ServerStatus LocalTtsClient::ping() {
     ServerStatus status;
     status.ttsReachable = false;
@@ -243,25 +245,27 @@ ServerStatus LocalTtsClient::ping() {
     status.ollamaReachable = false;
 
     if (WiFi.status() != WL_CONNECTED) return status;
-    HTTPClient http;
-    http.begin(baseUrl + "/api/health");
-    http.setConnectTimeout(3000);   // 3 second grace period
-    http.setTimeout(3000);
-    int code = http.GET();
-    if (code == 200) {
-        status.ttsReachable = true;
-        String payload = http.getString();
-        DynamicJsonDocument doc(1024);
-        DeserializationError err = deserializeJson(doc, payload);
-        if (!err) {
-            status.sttAvailable = doc["stt_available"] | false;
-            status.ollamaReachable = doc["ollama_reachable"] | false;
-        }
-    }
-    http.end();
-    return status;
-}
 
-void LocalTtsClient::setVoiceId(const String& voice) {
-    if (voice.length() > 0) voiceId = voice;
+    WiFiClient client;
+    client.setTimeout(1); // 1-second connect timeout
+
+    // 1. Check Kokoro TTS port
+    if (client.connect(serverIp.c_str(), kokoroPort)) {
+        status.ttsReachable = true;
+        client.stop();
+    }
+
+    // 2. Check Moonshine STT port
+    if (client.connect(serverIp.c_str(), moonshinePort)) {
+        status.sttAvailable = true;
+        client.stop();
+    }
+
+    // 3. Check Ollama LLM port
+    if (client.connect(serverIp.c_str(), ollamaPort)) {
+        status.ollamaReachable = true;
+        client.stop();
+    }
+
+    return status;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include "IDisplay.h"
+#include "RuntimeSettings.h"
 
 class IApiClient {
 public:
@@ -18,6 +19,7 @@ public:
     // at boot with the value persisted in NVS so it can be changed without
     // reflashing.
     virtual void setServer(const String& ip, uint16_t port) = 0;
+    virtual void configure(const String& ip, const RuntimeSettings& settings) = 0;
 
     // Quick liveness check against the server (GET /api/health, short timeout).
     // Returns status flags for TTS, STT, and Ollama. Used for the boot "connecting to

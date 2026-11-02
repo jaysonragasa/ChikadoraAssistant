@@ -25,9 +25,8 @@ void VoiceAssistant::begin() {
     // address + all runtime settings. Point the client at the server and keep
     // the settings for applying to the hardware below.
     DeviceConfig::begin();
-    api.setServer(DeviceConfig::serverIp(), DeviceConfig::serverPort());
     settings = DeviceConfig::settings();
-    api.setVoiceId(settings.voiceId);
+    api.configure(DeviceConfig::serverIp(), settings);
     display.setEyeConfig(settings.eyeWidth, settings.eyeHeight, settings.eyeGap,
                          settings.eyeRoundness, settings.showMouth);
     display.setOverlayFlags(settings.showLoopTime, settings.showFreeMem);
