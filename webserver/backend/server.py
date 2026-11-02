@@ -50,6 +50,14 @@ import time
 import threading
 from contextlib import asynccontextmanager
 
+# ==========================================
+# CONFIGURATION
+# ==========================================
+# Change these to "0.0.0.0" to allow other devices (like the ESP32) to connect!
+BIND_HOST = "0.0.0.0"
+BIND_PORT = "8000"
+# ==========================================
+
 # Single background worker renders queued jobs one at a time.
 job_queue = JobQueue(synth_fn=lambda mid, params: registry.synthesize(mid, params))
 
@@ -115,8 +123,8 @@ def _warm_models_worker() -> None:
     except Exception as e:  # noqa: BLE001
         _log(f"\n  [error] Kokoro init failed: {e}\n")
 
-    host = os.environ.get("TTS_HOST", "127.0.0.1")
-    port = os.environ.get("TTS_PORT", "8000")
+    host = os.environ.get("TTS_HOST", BIND_HOST)
+    port = os.environ.get("TTS_PORT", BIND_PORT)
     _log(bar)
     _log(f"  Ready. Listening on http://{host}:{port}")
     _log(bar + "\n")
@@ -474,6 +482,6 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.environ.get("TTS_HOST", "127.0.0.1")
-    port = int(os.environ.get("TTS_PORT", "8000"))
+    host = os.environ.get("TTS_HOST", BIND_HOST)
+    port = int(os.environ.get("TTS_PORT", BIND_PORT))
     uvicorn.run(app, host=host, port=port)

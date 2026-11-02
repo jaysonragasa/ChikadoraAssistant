@@ -27,8 +27,8 @@ enum class PlaybackMode {
 };
 
 namespace Wifi {
-    constexpr const char* SSID = "corp-wifi";
-    constexpr const char* PASS = "1nf1ni8m@InF0r";
+    constexpr const char* SSID = "highest_point";
+    constexpr const char* PASS = "24f341%U";
 }
 
 // BOOTSTRAP: over-the-air update settings. HOSTNAME is how the device appears
@@ -42,7 +42,7 @@ namespace Ota {
 namespace Server {
     // BOOTSTRAP: where to reach the local server. Can't be web-configured -
     // the device needs the address to fetch settings in the first place.
-    constexpr const char* IP       = "192.168.1.60";  // PC running the local server
+    constexpr const char* IP       = "192.168.1.34"; //192.168.1.60";  // PC running the local server
     constexpr uint16_t    PORT     = 8000;
     // DEFAULT: web-overridable (device settings "voice_id").
     constexpr const char* VOICE_ID = "af_sarah";      // Kokoro voice
